@@ -130,6 +130,32 @@ const MONO="'DM Mono', monospace", SERIF="'Playfair Display', serif";
 const COLORS=["#C8974E","#4A7FA5","#7DB8D4","#E8C38A","#8B5A2B","#2D5A8C","#A8D8EA","#E8824A","#6DB87A","#B87CC8"];
 const RANK_COLORS=["#FFD700","#C0C0C0","#CD7F32","#4A7FA5","#5A7090","#3A5070","#2A4060","#1E3050","#162840","#0E2030"];
 
+// ── Pipeline Config ───────────────────────────────────────────────────────────
+const PIPELINE_MAP = {
+  "Interesado en proyecto":"Desarrollos","Contacto 1a1 Lead activo":"Desarrollos",
+  "Contacto 1a1 Lead detenido":"Desarrollos","Cita por confirmar":"Desarrollos",
+  "No respondio / Lead Frio":"Desarrollos","No respondió / Lead Frío":"Desarrollos",
+  "Cita agendada presencial":"Desarrollos","Mensaje programado":"Desarrollos","Descalificado":"Desarrollos",
+  "Asistio a cita":"Cierre","Asistió a cita":"Cierre","Nutricion de cierre":"Cierre",
+  "Nutrición de cierre":"Cierre","Apartado":"Cierre","Enganche":"Cierre",
+  "Proceso notarial":"Cierre","Venta cerrada":"Cierre",
+  "LEAD Entrante":"Rentas","Reservado":"Rentas","Cancelado":"Rentas","Clientes habituales":"Rentas",
+};
+const PIPELINE_CONFIG = {
+  "Desarrollos":{color:"#C8974E",icon:"🏗️",stages:["Interesado en proyecto","Contacto 1a1 Lead activo","Contacto 1a1 Lead detenido","Cita por confirmar","No respondió / Lead Frío","Cita agendada presencial","Mensaje programado","Descalificado"]},
+  "Cierre":{color:"#6DB87A",icon:"✅",stages:["Asistió a cita","Nutrición de cierre","Apartado","Enganche","Proceso notarial","Venta cerrada"]},
+  "Rentas":{color:"#4A7FA5",icon:"🏖️",stages:["LEAD Entrante","Reservado","Cancelado","Clientes habituales"]},
+};
+function getLeadNotes(row) {
+  return row["{{contact.suma_de_notas_de_agente}}"]||row["suma_de_notas_de_agente"]||row["contact.suma_de_notas_de_agente"]||row["Notas del agente"]||"0";
+}
+function getLeadPipeline(lead) {
+  const p = lead["Pipeline"]||lead["Pipeline Name"]||lead["pipeline"]||"";
+  if (p) { if (/cierre|02/i.test(p)) return "Cierre"; if (/renta|vacacional/i.test(p)) return "Rentas"; if (/desarroll|01/i.test(p)) return "Desarrollos"; }
+  return PIPELINE_MAP[lead["Stage"]||lead["stage"]||""]||"Desarrollos";
+}
+function inDateRange(dateStr, start, end) { const d=parseDate(dateStr); return d&&d>=start&&d<=end; }
+
 // ── Seed report (PDF data) ────────────────────────────────────────────────────
 const SEED_REPORT = {
   id:"report_seed_feb7_mar9", label:"Feb 7 – Mar 9, 2026", period:"2026-02-07", createdAt:"2026-03-09",
@@ -275,6 +301,208 @@ function ScoreBar({value,color}) {
 function RankBadge({rank}) {
   const m=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":null;
   return <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:30,height:30,borderRadius:"50%",background:RANK_COLORS[rank-1]||"#0E2030",fontFamily:MONO,fontSize:m?16:11,fontWeight:700,color:rank<=3?"#fff":"#5A7090",flexShrink:0}}>{m||`#${rank}`}</div>;
+}
+
+// ── Date Filter Bar ───────────────────────────────────────────────────────────
+function DateFilterBar({ filter, setFilter, datasets }) {
+  const months = useMemo(() => {
+    const set = new Set();
+    const allRows = [...(datasets?.llamadas||[]),...(datasets?.mensajes||[]),...(datasets?.leads||[])];
+    allRows.forEach(r => { const d=parseDate(r["Creada Activado"]||r["Created On"]||""); if(d) set.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); });
+    return [...set].sort().reverse();
+  },[datasets]);
+  const isActive = v => filter===v || (typeof filter==="object" && filter?.month===v);
+  const Btn = ({label,val}) => (
+    <button onClick={()=>setFilter(val)} style={{background:isActive(val)?GOLD:"#0f1923",color:isActive(val)?NAVY:"#8A9BB8",border:`1px solid ${isActive(val)?GOLD:"#1E3050"}`,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontFamily:MONO,fontSize:10,fontWeight:isActive(val)?700:400,transition:"all 0.15s",whiteSpace:"nowrap"}}>{label}</button>
+  );
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 22px",background:"#070D14",borderBottom:"1px solid #0D1B2A",flexWrap:"wrap"}}>
+      <span style={{color:"#5A7090",fontFamily:MONO,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>Filtrar:</span>
+      <Btn label="Todo" val="all"/>
+      <Btn label="Esta semana" val="week"/>
+      <Btn label="Este mes" val="month"/>
+      <Btn label="Mes anterior" val="prev_month"/>
+      {months.length>0&&(
+        <select value={typeof filter==="object"?filter.month:""} onChange={e=>e.target.value&&setFilter({type:"month_specific",month:e.target.value})}
+          style={{background:"#0f1923",color:"#8A9BB8",border:"1px solid #1E3050",borderRadius:8,padding:"6px 10px",fontFamily:MONO,fontSize:10,cursor:"pointer",outline:"none"}}>
+          <option value="">Mes específico…</option>
+          {months.map(m=><option key={m} value={m}>{new Date(m+"-15").toLocaleDateString("es-MX",{month:"long",year:"numeric"})}</option>)}
+        </select>
+      )}
+      {filter!=="all"&&<span style={{color:GOLD,fontFamily:MONO,fontSize:9,marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:"50%",background:GOLD,display:"inline-block"}}/>Filtro activo</span>}
+    </div>
+  );
+}
+
+// ── Pipeline Kanban ───────────────────────────────────────────────────────────
+function PipelineKanban({ leads, llamadas, mensajes }) {
+  const [sel, setSel] = useState("Desarrollos");
+  const [asrFilter, setAsrFilter] = useState("");
+  const cfg = PIPELINE_CONFIG[sel];
+  const enriched = useMemo(()=>leads.map(lead=>{
+    const contactName=lead["Primary Contact Name"]||lead["Contact Name"]||"";
+    const stage=lead["Stage"]||lead["stage"]||"";
+    const pipeline=getLeadPipeline(lead);
+    const notes=getLeadNotes(lead);
+    const agentName=lead["Assigned User"]||lead["Owner"]||"Sin asignar";
+    const firstWord=(contactName.split(" ")[0]||"").toLowerCase();
+    const callCount=firstWord.length>2?llamadas.filter(r=>(r["Nombre del Contacto"]||"").toLowerCase().includes(firstWord)).length:0;
+    const msgCount=firstWord.length>2?mensajes.filter(r=>(r["Nombre del Contacto"]||"").toLowerCase().includes(firstWord)).length:0;
+    return {...lead,contactName,stage,pipeline,notes,agentName,callCount,msgCount};
+  }),[leads,llamadas,mensajes]);
+  const pipeLeads=enriched.filter(l=>l.pipeline===sel&&(asrFilter===""||l.agentName.toLowerCase().includes(asrFilter.toLowerCase())));
+  const pipeCount=(name)=>enriched.filter(l=>l.pipeline===name).length;
+  if(!leads.length) return <div style={{background:"#0A1420",border:`1px solid ${GOLD}22`,borderRadius:16,padding:40,textAlign:"center",color:"#2A3D5A",fontFamily:MONO,fontSize:12}}>Sube el CSV de leads para ver el pipeline</div>;
+  return (
+    <div>
+      <SectionTitle>🏗️ Pipeline — Etapas por Prospecto</SectionTitle>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+        {Object.entries(PIPELINE_CONFIG).map(([name,c])=>{
+          const isA=sel===name;
+          return <button key={name} onClick={()=>setSel(name)} style={{background:isA?`${c.color}22`:"#0f1923",border:`1px solid ${isA?c.color:"#1E3050"}`,color:isA?c.color:"#5A7090",borderRadius:10,padding:"8px 16px",cursor:"pointer",fontFamily:MONO,fontSize:11,fontWeight:isA?700:400,display:"flex",alignItems:"center",gap:6,transition:"all 0.15s"}}>
+            <span>{c.icon}</span><span>{name}</span>
+            <span style={{background:isA?`${c.color}33`:"#1A2B4A",color:isA?c.color:"#5A7090",borderRadius:12,padding:"2px 8px",fontSize:9,fontWeight:700}}>{pipeCount(name)}</span>
+          </button>;
+        })}
+        <input placeholder="Filtrar asesor…" value={asrFilter} onChange={e=>setAsrFilter(e.target.value)}
+          style={{marginLeft:"auto",background:"#0f1923",border:"1px solid #1E3050",color:"#F0EAD6",borderRadius:8,padding:"7px 12px",fontFamily:MONO,fontSize:10,outline:"none",minWidth:160}}/>
+      </div>
+      <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:12,alignItems:"flex-start"}}>
+        {cfg.stages.map(stage=>{
+          const stLeads=pipeLeads.filter(l=>l.stage===stage);
+          return (
+            <div key={stage} style={{minWidth:196,flexShrink:0}}>
+              <div style={{background:`${cfg.color}18`,border:`1px solid ${cfg.color}44`,borderRadius:"10px 10px 0 0",padding:"9px 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{color:cfg.color,fontFamily:MONO,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,lineHeight:1.3}}>{stage}</span>
+                <span style={{background:`${cfg.color}44`,color:cfg.color,borderRadius:10,padding:"2px 8px",fontSize:9,fontWeight:700,flexShrink:0,marginLeft:4}}>{stLeads.length}</span>
+              </div>
+              <div style={{background:"#0A1420",border:`1px solid ${cfg.color}22`,borderTop:"none",borderRadius:"0 0 10px 10px",padding:8,minHeight:100,display:"flex",flexDirection:"column",gap:6}}>
+                {stLeads.length===0
+                  ?<div style={{color:"#2A3D5A",fontFamily:MONO,fontSize:9,textAlign:"center",padding:"16px 0"}}>Sin leads</div>
+                  :stLeads.map((lead,i)=>(
+                    <div key={i} style={{background:"#0f1923",border:"1px solid #1E3050",borderRadius:8,padding:"9px 11px",transition:"border-color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=`${cfg.color}66`} onMouseLeave={e=>e.currentTarget.style.borderColor="#1E3050"}>
+                      <div style={{color:"#F0EAD6",fontFamily:MONO,fontSize:10,fontWeight:600,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.contactName||"Sin nombre"}</div>
+                      <div style={{color:"#5A7090",fontFamily:MONO,fontSize:9,marginBottom:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.agentName}</div>
+                      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                        {lead.callCount>0&&<span style={{color:GOLD,fontSize:8,background:`${GOLD}18`,borderRadius:4,padding:"2px 5px"}}>📞{lead.callCount}</span>}
+                        {lead.msgCount>0&&<span style={{color:"#4A7FA5",fontSize:8,background:"#4A7FA522",borderRadius:4,padding:"2px 5px"}}>💬{lead.msgCount}</span>}
+                        {parseInt(lead.notes)>0&&<span style={{color:"#B87CC8",fontSize:8,background:"#B87CC822",borderRadius:4,padding:"2px 5px"}}>📝{lead.notes}</span>}
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Asesor Search ─────────────────────────────────────────────────────────────
+function AsesorSearch({ agents, leads, llamadas, mensajes }) {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [showDrop, setShowDrop] = useState(false);
+  const filtered = query.length>=1 ? agents.filter(a=>a.name.toLowerCase().includes(query.toLowerCase())) : [];
+  const selAgent = agents.find(a=>a.name===selected);
+  const agentLeads = useMemo(()=>{
+    if (!selected) return [];
+    return leads.filter(l=>(l["Assigned User"]||"").toLowerCase()===selected.toLowerCase()).map(lead=>{
+      const contactName=lead["Primary Contact Name"]||lead["Contact Name"]||"";
+      const stage=lead["Stage"]||lead["stage"]||"";
+      const pipeline=getLeadPipeline(lead);
+      const notes=getLeadNotes(lead);
+      const fw=(contactName.split(" ")[0]||"").toLowerCase();
+      const callCount=fw.length>2?llamadas.filter(r=>(r["Nombre del Contacto"]||"").toLowerCase().includes(fw)).length:0;
+      const msgCount=fw.length>2?mensajes.filter(r=>(r["Nombre del Contacto"]||"").toLowerCase().includes(fw)).length:0;
+      return {contactName,stage,pipeline,notes,callCount,msgCount,actividades:callCount+msgCount+(parseInt(notes)||0)};
+    });
+  },[selected,leads,llamadas,mensajes]);
+  const pipeCounts = useMemo(()=>{ const c={}; agentLeads.forEach(l=>{c[l.pipeline]=(c[l.pipeline]||0)+1;}); return c; },[agentLeads]);
+  return (
+    <div>
+      <SectionTitle>🔍 Búsqueda por Asesor</SectionTitle>
+      <div style={{position:"relative",marginBottom:16}}>
+        <input placeholder="Escribe el nombre del asesor…" value={query}
+          onChange={e=>{setQuery(e.target.value);setShowDrop(true);if(!e.target.value){setSelected(null);}}}
+          onFocus={()=>setShowDrop(true)}
+          style={{width:"100%",background:"#0f1923",border:`2px solid ${GOLD}44`,color:"#F0EAD6",borderRadius:10,padding:"13px 16px",fontFamily:MONO,fontSize:13,outline:"none",boxSizing:"border-box",transition:"border-color 0.15s"}}
+          onMouseEnter={e=>e.currentTarget.style.borderColor=`${GOLD}88`} onMouseLeave={e=>e.currentTarget.style.borderColor=`${GOLD}44`}/>
+        {filtered.length>0&&showDrop&&!selected&&(
+          <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:"#0A1420",border:`1px solid ${GOLD}33`,borderRadius:10,zIndex:200,overflow:"hidden"}}>
+            {filtered.slice(0,8).map(a=>(
+              <div key={a.name} onClick={()=>{setSelected(a.name);setQuery(a.name);setShowDrop(false);}}
+                style={{padding:"11px 16px",cursor:"pointer",color:"#F0EAD6",fontFamily:MONO,fontSize:12,borderBottom:"1px solid #0D1B2A",display:"flex",alignItems:"center",justifyContent:"space-between"}}
+                onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}18`} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <span>{a.name}</span>
+                <span style={{color:"#5A7090",fontSize:10}}>Score {a.score}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {selected&&selAgent&&(
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10,marginBottom:16}}>
+            <KPICard icon={Users} label="Leads Asignados" value={agentLeads.length} color={GOLD}/>
+            <KPICard icon={Phone} label="Llamadas" value={selAgent.llamadasTotal}/>
+            <KPICard icon={MessageSquare} label="Mensajes" value={selAgent.mensajesTotal} color="#4A7FA5"/>
+            <KPICard icon={TrendingUp} label="% Contactación" value={`${selAgent.tasaContactos||0}%`} color="#6DB87A"/>
+            <KPICard icon={BarChart2} label="Actividades" value={selAgent.actividadesTotal||0}/>
+            <KPICard icon={Award} label="Score" value={selAgent.score} color={GOLD}/>
+          </div>
+          {Object.keys(pipeCounts).length>0&&(
+            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+              {Object.entries(PIPELINE_CONFIG).map(([name,c])=>(
+                <div key={name} style={{background:`${c.color}14`,border:`1px solid ${c.color}33`,borderRadius:10,padding:"12px 18px",flex:1,minWidth:110}}>
+                  <div style={{color:c.color,fontFamily:MONO,fontSize:9,textTransform:"uppercase",marginBottom:4}}>{c.icon} {name}</div>
+                  <div style={{color:"#F0EAD6",fontFamily:SERIF,fontSize:26,fontWeight:700,lineHeight:1}}>{pipeCounts[name]||0}</div>
+                  <div style={{color:"#5A7090",fontFamily:MONO,fontSize:9,marginTop:2}}>leads</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {agentLeads.length>0?(
+            <div style={{background:"#0A1420",border:`1px solid ${GOLD}33`,borderRadius:16,overflow:"hidden"}}>
+              <div style={{padding:"14px 20px",borderBottom:`1px solid ${GOLD}22`,display:"flex",alignItems:"center",gap:8}}>
+                <div style={{color:"#F0EAD6",fontFamily:SERIF,fontSize:15,fontWeight:600}}>Leads de {selected}</div>
+                <div style={{color:"#5A7090",fontFamily:MONO,fontSize:10}}>· {agentLeads.length} registros</div>
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontFamily:MONO,fontSize:11}}>
+                  <thead><tr style={{background:"#0D1B2A"}}>{["Prospecto","Pipeline","Etapa","📞","💬","📝 Notas","Total Act."].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",color:"#5A7090",fontSize:9,fontWeight:500,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                  <tbody>{agentLeads.map((lead,i)=>{
+                    const pc=PIPELINE_CONFIG[lead.pipeline]||{color:GOLD};
+                    return <tr key={i} style={{borderBottom:"1px solid #0D1B2A"}} onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}0A`} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <td style={{padding:"10px 14px",color:"#F0EAD6",fontWeight:600,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.contactName||"—"}</td>
+                      <td style={{padding:"10px 14px"}}><span style={{color:pc.color,background:`${pc.color}18`,borderRadius:6,padding:"3px 8px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{lead.pipeline}</span></td>
+                      <td style={{padding:"10px 14px",color:"#A8C0D8",fontSize:10,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.stage||"—"}</td>
+                      <td style={{padding:"10px 14px",textAlign:"center",color:lead.callCount>0?GOLD:"#3A5070",fontWeight:lead.callCount>0?700:400}}>{lead.callCount||"—"}</td>
+                      <td style={{padding:"10px 14px",textAlign:"center",color:lead.msgCount>0?"#4A7FA5":"#3A5070",fontWeight:lead.msgCount>0?700:400}}>{lead.msgCount||"—"}</td>
+                      <td style={{padding:"10px 14px",textAlign:"center",color:parseInt(lead.notes)>0?"#B87CC8":"#3A5070",fontWeight:parseInt(lead.notes)>0?700:400}}>{lead.notes}</td>
+                      <td style={{padding:"10px 14px",textAlign:"center",color:lead.actividades>0?"#6DB87A":"#3A5070",fontWeight:lead.actividades>0?700:400,fontSize:13}}>{lead.actividades||"—"}</td>
+                    </tr>;
+                  })}</tbody>
+                </table>
+              </div>
+            </div>
+          ):(
+            <div style={{background:"#0A1420",border:`1px solid ${GOLD}22`,borderRadius:16,padding:28,textAlign:"center",color:"#3A5070",fontFamily:MONO,fontSize:11}}>
+              No hay leads CSV cargados — sube el archivo de leads para ver el detalle del asesor
+            </div>
+          )}
+        </div>
+      )}
+      {!selected&&(
+        <div style={{background:"#0A1420",border:`1px solid ${GOLD}22`,borderRadius:16,padding:48,textAlign:"center"}}>
+          <Users size={36} color="#2A3D5A" style={{marginBottom:12}}/>
+          <div style={{color:"#5A7090",fontFamily:MONO,fontSize:12,marginTop:8}}>Busca un asesor para ver su resumen completo de leads y actividad</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Leads & Activity Panel ────────────────────────────────────────────────────
@@ -823,12 +1051,59 @@ function ReportSidebar({reports,activeId,onSelect,onDelete,onNew}) {
 
 // ── Report Dashboard ──────────────────────────────────────────────────────────
 function ReportDashboard({report,prevReport}) {
-  const [activeTab,setActiveTab]=useState("ranking"); const [selectedAgent,setSelectedAgent]=useState(null);
+  const [activeTab,setActiveTab]=useState("ranking");
+  const [selectedAgent,setSelectedAgent]=useState(null);
+  const [dateFilter,setDateFilter]=useState("all");
   const {summary,charts,agentScores,datasets}=report;
   const prev=prevReport?.summary;
-  const delta=key=>prev?(summary[key]||0)-(prev[key]||0):undefined;
-  const TABS=[{id:"ranking",label:"🏆 Ranking"},{id:"asesores",label:"👤 Asesores"},{id:"semanas",label:"📅 Semanas"},{id:"llamadas",label:"📞 Llamadas"},{id:"mensajes",label:"💬 Mensajes"},{id:"contactos",label:"👤 Contactos"},{id:"leads",label:"🚨 LEADS"},{id:"presupuestos",label:"💰 Presupuestos"}];
-  const {llamadas=[],mensajes=[],contactos=[],leads=[],presupuestos=[]}=datasets||{};
+
+  // ── Filtered datasets ──────────────────────────────────────────────────────
+  const filteredDatasets = useMemo(()=>{
+    if (dateFilter==="all"||!datasets) return datasets||{llamadas:[],mensajes:[],contactos:[],leads:[],presupuestos:[]};
+    const now=new Date(); let start,end;
+    if (dateFilter==="week") { start=getWeekStart(now); end=new Date(start); end.setDate(end.getDate()+6); }
+    else if (dateFilter==="month") { start=new Date(now.getFullYear(),now.getMonth(),1); end=new Date(now.getFullYear(),now.getMonth()+1,0); }
+    else if (dateFilter==="prev_month") { start=new Date(now.getFullYear(),now.getMonth()-1,1); end=new Date(now.getFullYear(),now.getMonth(),0); }
+    else if (dateFilter?.type==="month_specific") { const [yr,mo]=dateFilter.month.split("-").map(Number); start=new Date(yr,mo-1,1); end=new Date(yr,mo,0); }
+    else return datasets;
+    const ok=str=>inDateRange(str,start,end);
+    return {
+      llamadas:(datasets.llamadas||[]).filter(r=>ok(r["Creada Activado"]||r["Created On"]||"")),
+      mensajes:(datasets.mensajes||[]).filter(r=>ok(r["Creada Activado"]||"")),
+      contactos:(datasets.contactos||[]).filter(r=>ok(r["Creada Activado"]||r["Created On"]||"")),
+      leads:(datasets.leads||[]).filter(r=>ok(r["Created On"]||"")),
+      presupuestos:(datasets.presupuestos||[]).filter(r=>ok(r["Created On"]||r["Updated On"]||"")),
+    };
+  },[datasets,dateFilter]);
+
+  const filteredAgentScores = useMemo(()=>{
+    if (dateFilter==="all") return agentScores||[];
+    const hasRaw=(filteredDatasets.llamadas?.length||0)+(filteredDatasets.mensajes?.length||0)>0;
+    return hasRaw ? buildAgentScores(filteredDatasets) : agentScores||[];
+  },[filteredDatasets,dateFilter,agentScores]);
+
+  const filteredSummary = useMemo(()=>{
+    if (dateFilter==="all") return summary;
+    const hasRaw=(filteredDatasets.llamadas?.length||0)+(filteredDatasets.mensajes?.length||0)>0;
+    return hasRaw ? buildSummaryFromDatasets(filteredDatasets) : summary;
+  },[filteredDatasets,dateFilter,summary]);
+
+  const delta=key=>prev?(filteredSummary[key]||0)-(prev[key]||0):undefined;
+
+  const TABS=[
+    {id:"ranking",label:"🏆 Ranking"},
+    {id:"buscar",label:"🔍 Asesor"},
+    {id:"pipeline",label:"🏗️ Pipeline"},
+    {id:"asesores",label:"👤 Actividad"},
+    {id:"semanas",label:"📅 Semanas"},
+    {id:"llamadas",label:"📞 Llamadas"},
+    {id:"mensajes",label:"💬 Mensajes"},
+    {id:"contactos",label:"👤 Contactos"},
+    {id:"leads",label:"🚨 LEADS"},
+    {id:"presupuestos",label:"💰 Presupuestos"},
+  ];
+
+  const {llamadas=[],mensajes=[],contactos=[],leads=[],presupuestos=[]}=filteredDatasets||{};
   const hasRaw=llamadas.length>0||mensajes.length>0;
   const llamadasPorAgente=hasRaw?Object.entries(llamadas.reduce((acc,r)=>{const a=r["Llamar realizada Vía"]||"N/A";acc[a]=(acc[a]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value).slice(0,8):charts.llamadasPorAgente||[];
   const estadoLlamadas=hasRaw?Object.entries(llamadas.reduce((acc,r)=>{const s=r["Estado de la llamada"]||"N/A";acc[s]=(acc[s]||0)+1;return acc;},{})).map(([name,value])=>({name,value})):charts.estadoLlamadas||[];
@@ -838,36 +1113,54 @@ function ReportDashboard({report,prevReport}) {
   const leadsPorStage=hasRaw?Object.entries(leads.reduce((acc,r)=>{const s=r["Stage"]||"N/A";acc[s]=(acc[s]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value):[];
   const leadsPorAgente=hasRaw?Object.entries(leads.reduce((acc,r)=>{const a=r["Assigned User"]||"N/A";acc[a]=(acc[a]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value):[];
   const interesDist=hasRaw?Object.entries(presupuestos.reduce((acc,r)=>{const n=(r["Nivel_interes"]||"Sin nivel").replace(/[^\w\sáéíóúÁÉÍÓÚñÑ–]/g,"").trim()||"Sin nivel";acc[n]=(acc[n]||0)+1;return acc;},{})).map(([name,value])=>({name,value})):charts.interesDist||[];
-  const selAgent=agentScores?.find(a=>a.name===selectedAgent); const selRank=(agentScores?.findIndex(a=>a.name===selectedAgent)||0)+1;
+  const selAgent=filteredAgentScores?.find(a=>a.name===selectedAgent);
+  const selRank=(filteredAgentScores?.findIndex(a=>a.name===selectedAgent)||0)+1;
+
+  const noKpiTabs = ["semanas","pipeline","buscar"];
+
   return (
     <div style={{flex:1,overflowY:"auto"}}>
+      {/* Header */}
       <div style={{background:"linear-gradient(90deg,#0A1420,#0f1923)",borderBottom:`1px solid ${GOLD}33`,padding:"0 24px",height:54,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50}}>
-        <div><span style={{color:"#F0EAD6",fontFamily:SERIF,fontSize:15,fontWeight:600}}>Taller del Ladrillo</span><span style={{color:"#5A7090",fontFamily:MONO,fontSize:10,marginLeft:12}}>{report.label}</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{color:"#F0EAD6",fontFamily:SERIF,fontSize:15,fontWeight:600}}>Taller del Ladrillo</span>
+          <span style={{color:"#5A7090",fontFamily:MONO,fontSize:10}}>{report.label}</span>
+          {dateFilter!=="all"&&<span style={{background:`${GOLD}22`,color:GOLD,borderRadius:6,padding:"2px 8px",fontFamily:MONO,fontSize:9,fontWeight:700}}>FILTRADO</span>}
+        </div>
         {selectedAgent&&<button onClick={()=>setSelectedAgent(null)} style={{background:`${GOLD}1A`,border:`1px solid ${GOLD}44`,color:GOLD,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontFamily:MONO,fontSize:10,display:"flex",alignItems:"center",gap:5}}><ArrowLeft size={11}/> Ranking</button>}
       </div>
-      {!selectedAgent&&<div style={{background:"#0A1420",borderBottom:"1px solid #1E3050",padding:"0 24px",display:"flex",gap:2,overflowX:"auto"}}>
-        {TABS.map(tab=><button key={tab.id} onClick={()=>setActiveTab(tab.id)} style={{background:"none",border:"none",borderBottom:activeTab===tab.id?`2px solid ${GOLD}`:"2px solid transparent",color:activeTab===tab.id?GOLD:"#5A7090",padding:"12px 15px",cursor:"pointer",fontFamily:MONO,fontSize:11,whiteSpace:"nowrap",transition:"all 0.15s"}}>{tab.label}</button>)}
+
+      {/* Tab bar */}
+      {!selectedAgent&&<div style={{background:"#0A1420",borderBottom:"1px solid #1E3050",padding:"0 24px",display:"flex",gap:0,overflowX:"auto"}}>
+        {TABS.map(tab=><button key={tab.id} onClick={()=>setActiveTab(tab.id)} style={{background:"none",border:"none",borderBottom:activeTab===tab.id?`2px solid ${GOLD}`:"2px solid transparent",color:activeTab===tab.id?GOLD:"#5A7090",padding:"12px 13px",cursor:"pointer",fontFamily:MONO,fontSize:10,whiteSpace:"nowrap",transition:"all 0.15s"}}>{tab.label}</button>)}
       </div>}
-      <div style={{padding:"20px 22px",maxWidth:1100,margin:"0 auto"}}>
-        {selectedAgent&&selAgent&&<AgentDetail agent={selAgent} rank={selRank} datasets={datasets||{}} onBack={()=>setSelectedAgent(null)}/>}
+
+      {/* Global Date Filter */}
+      {!selectedAgent&&<DateFilterBar filter={dateFilter} setFilter={f=>{setDateFilter(f);}} datasets={datasets||{}}/>}
+
+      <div style={{padding:"20px 22px",maxWidth:1200,margin:"0 auto"}}>
+        {selectedAgent&&selAgent&&<AgentDetail agent={selAgent} rank={selRank} datasets={filteredDatasets||{}} onBack={()=>setSelectedAgent(null)}/>}
         {!selectedAgent&&<>
-          {activeTab!=="semanas"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10,marginBottom:18}}>
-            <KPICard icon={Phone} label="Llamadas" value={summary.totalLlamadas} delta={delta("totalLlamadas")}/>
-            <KPICard icon={TrendingUp} label="Contestadas" value={summary.contestadas} color="#6DB87A" delta={delta("contestadas")}/>
-            <KPICard icon={MessageSquare} label="Mensajes" value={summary.totalMensajes} color="#4A7FA5" delta={delta("totalMensajes")}/>
-            <KPICard icon={AlertTriangle} label="Sin Leer" value={summary.unread} color="#E8824A" delta={delta("unread")}/>
-            <KPICard icon={Users} label="Contactos" value={summary.totalContactos} delta={delta("totalContactos")}/>
-            <KPICard icon={AlertTriangle} label="Leads Abd." value={summary.totalLeads} color="#E8824A" delta={delta("totalLeads")}/>
-            {summary.clientesGanados>0&&<KPICard icon={TrendingUp} label="Ganados" value={summary.clientesGanados} color="#6DB87A"/>}
-            {summary.presTotal>0&&<KPICard icon={DollarSign} label="Presupuestado" value={`$${(summary.presTotal/1000000).toFixed(1)}M`}/>}
+          {/* Global KPI cards */}
+          {!noKpiTabs.includes(activeTab)&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10,marginBottom:18}}>
+            <KPICard icon={Phone} label="Llamadas" value={filteredSummary.totalLlamadas} delta={delta("totalLlamadas")}/>
+            <KPICard icon={TrendingUp} label="Contestadas" value={filteredSummary.contestadas} color="#6DB87A" delta={delta("contestadas")}/>
+            <KPICard icon={MessageSquare} label="Mensajes" value={filteredSummary.totalMensajes} color="#4A7FA5" delta={delta("totalMensajes")}/>
+            <KPICard icon={AlertTriangle} label="Sin Leer" value={filteredSummary.unread} color="#E8824A" delta={delta("unread")}/>
+            <KPICard icon={Users} label="Contactos" value={filteredSummary.totalContactos} delta={delta("totalContactos")}/>
+            <KPICard icon={AlertTriangle} label="Leads Abd." value={filteredSummary.totalLeads} color="#E8824A" delta={delta("totalLeads")}/>
+            {filteredSummary.clientesGanados>0&&<KPICard icon={TrendingUp} label="Ganados" value={filteredSummary.clientesGanados} color="#6DB87A"/>}
+            {filteredSummary.presTotal>0&&<KPICard icon={DollarSign} label="Presupuestado" value={`$${(filteredSummary.presTotal/1000000).toFixed(1)}M`}/>}
           </div>}
-          {activeTab==="ranking"&&<AgentLeaderboard agents={agentScores||[]} onSelect={setSelectedAgent}/>}
-          {activeTab==="asesores"&&<LeadsPanel agents={agentScores||[]}/>}
-          {activeTab==="semanas"&&<WeeklyView report={report}/>}
+          {activeTab==="ranking"&&<AgentLeaderboard agents={filteredAgentScores} onSelect={setSelectedAgent}/>}
+          {activeTab==="buscar"&&<AsesorSearch agents={filteredAgentScores} leads={leads} llamadas={llamadas} mensajes={mensajes}/>}
+          {activeTab==="pipeline"&&<PipelineKanban leads={leads} llamadas={llamadas} mensajes={mensajes}/>}
+          {activeTab==="asesores"&&<LeadsPanel agents={filteredAgentScores}/>}
+          {activeTab==="semanas"&&<WeeklyView report={{...report,datasets:filteredDatasets}}/>}
           {activeTab==="llamadas"&&<><SectionTitle>📞 Llamadas Salientes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={llamadasPorAgente} dataKey="value" nameKey="name" color={GOLD}/><PiePanel title="Estado" data={estadoLlamadas}/></div>{llamadas.length>0&&<DataTable title="Detalle" rows={llamadas} cols={["Nombre del Contacto","Llamar realizada Vía","Duración (in segundos)","Estado de la llamada"]}/>}</>}
           {activeTab==="mensajes"&&<><SectionTitle>💬 Mensajes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={mensajesPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>{canalDist.length>0&&<PiePanel title="Canal" data={canalDist}/>}</div>{mensajes.length>0&&<DataTable title="Detalle" rows={mensajes} cols={["Nombre del Contacto","Mensajes no leídos","Asignado a","Tipo","Canal del último Mensaje"]}/>}</>}
           {activeTab==="contactos"&&<><SectionTitle>👤 Contactos</SectionTitle><div style={{marginBottom:12}}><ChartPanel title="Por Agente" data={contactosPorAgente} dataKey="value" nameKey="name" color={GOLD}/></div>{contactos.length>0&&<DataTable title="Detalle" rows={contactos} cols={["Nombre del Contacto","Número de teléfono","Usuario asignado"]}/>}</>}
-          {activeTab==="leads"&&<><SectionTitle>🚨 LEADS Abandonados</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{leadsPorStage.length>0&&<ChartPanel title="Por Etapa" data={leadsPorStage} dataKey="value" nameKey="name" color="#E8824A"/>}{leadsPorAgente.length>0&&<ChartPanel title="Por Agente" data={leadsPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>}</div>{leads.length>0&&<DataTable title="Detalle" rows={leads} cols={["Primary Contact Name","Assigned User","Stage","Source","Created On"]}/>}</>}
+          {activeTab==="leads"&&<><SectionTitle>🚨 LEADS</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{leadsPorStage.length>0&&<ChartPanel title="Por Etapa" data={leadsPorStage} dataKey="value" nameKey="name" color="#E8824A"/>}{leadsPorAgente.length>0&&<ChartPanel title="Por Agente" data={leadsPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>}</div>{leads.length>0&&<DataTable title="Detalle" rows={leads} cols={["Primary Contact Name","Assigned User","Stage","Source","Created On"]}/>}</>}
           {activeTab==="presupuestos"&&<><SectionTitle>💰 Presupuestos</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{interesDist.length>0&&<PiePanel title="Nivel de Interés" data={interesDist}/>}{charts.contactosPorMedio&&<PiePanel title="Por Medio" data={charts.contactosPorMedio}/>}</div>{presupuestos.length>0&&<DataTable title="Detalle" rows={presupuestos} cols={["identificador_presupuesto","Presupuesto","Nivel_interes","Owner","Created On"]}/>}</>}
         </>}
       </div>
