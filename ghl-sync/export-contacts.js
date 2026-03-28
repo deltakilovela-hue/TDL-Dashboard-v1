@@ -300,6 +300,43 @@ async function fetchAllConversations() {
   return all;
 }
 
+// ── Detecta si una conversación es una llamada telefónica ─────────────────────
+function isCallConversation(c) {
+  const type    = String(c.type || "").toLowerCase();
+  const channel = String(c.lastMessageChannel || c.lastMessageType || "").toLowerCase();
+  return type === "type_phone" || type === "phone" || type === "6" ||
+         channel === "call" || channel === "phone_call" || channel === "type_call" ||
+         channel.includes("call") || channel.includes("phone");
+}
+
+// ── Normaliza llamada desde conversación de tipo phone ────────────────────────
+function normalizeLlamada(c, userMap = {}) {
+  const agentName = c.ownerName || userMap[c.assignedTo] || c.assignedTo || "";
+  const direction = String(c.lastMessageDirection || "").toLowerCase();
+  const unread    = c.unreadCount || 0;
+  let status = "Answered";
+  if (unread > 0 && direction === "inbound") status = "No Answer";
+  const body = String(c.lastMessageBody || "").toLowerCase();
+  if (body.includes("missed") || body.includes("no answer") || body.includes("no contestada")) {
+    status = "No Answer";
+  } else if (body.includes("answered") || body.includes("completed") || body.includes("contestada")) {
+    status = "Answered";
+  }
+  let duration = "0";
+  const durMatch = body.match(/(\d+)\s*(seg|sec|s\b|second)/i) ||
+                   body.match(/duration[:\s]+(\d+)/i);
+  if (durMatch) duration = durMatch[1];
+
+  return {
+    "Nombre del Contacto":    c.contactName || c.fullName || "",
+    "Llamar realizada Vía":   agentName,
+    "Duración (in segundos)": duration,
+    "Estado de la llamada":   status,
+    "Creada Activado":        c.dateCreated || c.dateUpdated || "",
+    "Contact Id":             c.contactId || "",
+  };
+}
+
 function normalizeConversation(c, userMap = {}) {
   const ownerName = c.ownerName || userMap[c.assignedTo] || c.assignedTo || "";
   return {
@@ -325,22 +362,38 @@ async function main() {
   ]);
 
   const contacts = rawContacts.map((c) => normalizeContact(c, userMap, oppMap));
-  const mensajes = rawConversations.map((c) => normalizeConversation(c, userMap));
+
+  // Separar llamadas de mensajes según el tipo de conversación
+  const callConvs = rawConversations.filter(c => isCallConversation(c));
+  const msgConvs  = rawConversations.filter(c => !isCallConversation(c));
+  const llamadas  = callConvs.map((c) => normalizeLlamada(c, userMap));
+  const mensajes  = msgConvs.map((c)  => normalizeConversation(c, userMap));
 
   const today = new Date().toISOString().split("T")[0];
   const updatedAt = new Date().toISOString();
 
+  const payload = {
+    updatedAt,
+    total: contacts.length,
+    totalMensajes: mensajes.length,
+    totalLlamadas: llamadas.length,
+    contacts,
+    mensajes,
+    llamadas,
+  };
+
   // contacts-latest.json
   const latestPath = path.join(OUTPUT_DIR, "contacts-latest.json");
-  fs.writeFileSync(latestPath, JSON.stringify({ updatedAt, total: contacts.length, contacts, mensajes }, null, 2));
+  fs.writeFileSync(latestPath, JSON.stringify(payload, null, 2));
 
   // Backup con fecha
   const backupPath = path.join(OUTPUT_DIR, `contacts-${today}.json`);
-  fs.writeFileSync(backupPath, JSON.stringify({ updatedAt, total: contacts.length, contacts, mensajes }, null, 2));
+  fs.writeFileSync(backupPath, JSON.stringify(payload, null, 2));
 
   console.log(`\n✅ Sincronización completa:`);
   console.log(`   👥 ${contacts.length} contactos`);
-  console.log(`   💬 ${mensajes.length} conversaciones`);
+  console.log(`   💬 ${mensajes.length} mensajes`);
+  console.log(`   📞 ${llamadas.length} llamadas`);
   console.log(`   📄 ${latestPath}`);
 }
 

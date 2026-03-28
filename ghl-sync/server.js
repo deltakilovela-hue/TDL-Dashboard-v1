@@ -55,12 +55,21 @@ app.get("/api/status", (req, res) => {
     } catch {}
   }
 
+  let totalMensajes = 0;
+  try {
+    if (fs.existsSync(LATEST_FILE)) {
+      const d = JSON.parse(fs.readFileSync(LATEST_FILE, "utf8"));
+      totalMensajes = d.mensajes?.length || 0;
+    }
+  } catch {}
+
   res.json({
     ok: true,
     server: "TDL Dashboard Sync Server",
-    version: "1.0.0",
+    version: "1.1.0",
     lastSync,
     totalContacts: total,
+    totalMensajes,
     dataFile: fs.existsSync(LATEST_FILE) ? "exists" : "not_found",
   });
 });

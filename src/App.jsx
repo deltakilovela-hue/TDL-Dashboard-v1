@@ -275,12 +275,11 @@ function parseMainOpportunityClient(oppsStr) {
   return parsed.find(o=>o.status==="open")||parsed[0]||{status:"",pipeline:"",stage:""};
 }
 
-function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[]) {
+function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[], llamadasRaw=[]) {
   // Los contactos ya vienen con los mismos nombres de columna que el CSV de GHL
   // ("Assigned To", "Stage", "Pipeline", "Nombre del Contacto", etc.)
 
   const contactos = contacts;
-  // mensajesRaw ya viene normalizado con las columnas del CSV de mensajes
 
   // Para leads: contactos con Stage o Opportunities
   const leads = contacts
@@ -304,35 +303,102 @@ function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[]) {
       };
     });
 
-  const datasets = { llamadas:[], mensajes:mensajesRaw, contactos, leads, presupuestos:[] };
+  const datasets = { llamadas:llamadasRaw, mensajes:mensajesRaw, contactos, leads, presupuestos:[] };
 
-  const agentCounts = {};
+  // ── Resumen de llamadas ───────────────────────────────────────────────────
+  const contestadas = llamadasRaw.filter(r => r["Estado de la llamada"] === "Answered").length;
+  const perdidas    = llamadasRaw.filter(r => (r["Estado de la llamada"]||"").includes("No Answer") || (r["Estado de la llamada"]||"").includes("Missed")).length;
+  const durTotal    = llamadasRaw.reduce((s,r) => s + (parseInt(r["Duración (in segundos)"])||0), 0);
+  const durProm     = contestadas > 0 ? Math.round(durTotal / contestadas) : 0;
+  const tasaContest = llamadasRaw.length > 0 ? Math.round(contestadas / llamadasRaw.length * 100) : 0;
+
+  // ── Agent scores integrando llamadas + mensajes + contactos ──────────────
+  const agentMap = {};
+  const getAgent = (name) => {
+    if (!name || name === "N/A" || name === "") return null;
+    if (!agentMap[name]) agentMap[name] = {
+      name, llamadasTotal:0, llamadasContestadas:0, llamadasPerdidas:0, duracionTotal:0,
+      mensajesTotal:0, mensajesUnread:0, mensajesInbound:0,
+      contactosTotal:0, leadsAbandonados:0,
+    };
+    return agentMap[name];
+  };
+
   contactos.forEach(c => {
-    const a = c["Assigned To"]||c["Usuario asignado"]; if(!a||a==="N/A"||a==="") return;
-    agentCounts[a] = (agentCounts[a]||0)+1;
+    const a = getAgent(c["Assigned To"]||c["Usuario asignado"]);
+    if (a) a.contactosTotal++;
   });
-  const maxC = Math.max(...Object.values(agentCounts), 1);
-  const agentScores = Object.entries(agentCounts).map(([name,total]) => ({
-    name, score:Math.min(100,Math.round((total/maxC)*100)),
-    llamadasTotal:0, llamadasContestadas:0, tasaContestacion:0, durProm:0,
-    mensajesTotal:0, mensajesUnread:0, mensajesInbound:0,
-    contactosTotal:total, leadsAbandonados:0,
-    actividadesTotal:total, leadsContactados:total, actividadesPorLead:1, tasaContactos:100,
-    radar:[{subject:"Llamadas",value:0},{subject:"Contactación",value:0},{subject:"Mensajes",value:0},{subject:"Gestión",value:100},{subject:"Contactos",value:Math.round((total/maxC)*100)}],
-  })).sort((a,b)=>b.contactosTotal-a.contactosTotal);
 
-  const byAgent = Object.entries(agentCounts).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
+  llamadasRaw.forEach(r => {
+    const a = getAgent(r["Llamar realizada Vía"]);
+    if (!a) return;
+    a.llamadasTotal++;
+    if (r["Estado de la llamada"] === "Answered") {
+      a.llamadasContestadas++;
+      a.duracionTotal += parseInt(r["Duración (in segundos)"])||0;
+    }
+    if ((r["Estado de la llamada"]||"").includes("No Answer") || (r["Estado de la llamada"]||"").includes("Missed")) {
+      a.llamadasPerdidas++;
+    }
+  });
+
+  mensajesRaw.forEach(r => {
+    const a = getAgent(r["Asignado a"]);
+    if (!a) return;
+    a.mensajesTotal++;
+    if (r["Tipo"] === "Unread") a.mensajesUnread++;
+    if ((r["Dirección del último mensaje"]||"").toLowerCase() === "inbound") a.mensajesInbound++;
+  });
+
+  const agentList = Object.values(agentMap);
+  const maxL = Math.max(...agentList.map(a=>a.llamadasTotal), 1);
+  const maxM = Math.max(...agentList.map(a=>a.mensajesTotal), 1);
+  const maxC2 = Math.max(...agentList.map(a=>a.contactosTotal), 1);
+
+  const agentScores = agentList.map(a => {
+    const tasaC = a.llamadasTotal > 0 ? a.llamadasContestadas / a.llamadasTotal : 0;
+    const dp    = a.llamadasContestadas > 0 ? a.duracionTotal / a.llamadasContestadas : 0;
+    const outbound = a.mensajesTotal - a.mensajesInbound;
+    const g = a.mensajesTotal > 0 ? outbound / a.mensajesTotal : 0;
+    const score = Math.round(Math.max(0, Math.min(100,
+      (a.llamadasTotal / maxL) * 20 + tasaC * 25 + (Math.min(dp,120)/120)*15 +
+      (a.mensajesTotal / maxM) * 20 + g * 10 + (a.contactosTotal / maxC2) * 10
+    )));
+    const contactados = Math.min(a.llamadasContestadas + (a.mensajesTotal - a.mensajesInbound), Math.max(a.contactosTotal, 1));
+    return {
+      ...a,
+      tasaContestacion: a.llamadasTotal > 0 ? Math.round(tasaC * 100) : 0,
+      durProm: Math.round(dp),
+      gestionMensajes: Math.round(g * 100),
+      actividadesTotal: a.llamadasTotal + a.mensajesTotal,
+      leadsContactados: contactados,
+      actividadesPorLead: a.contactosTotal > 0 ? Math.round((a.llamadasTotal + a.mensajesTotal) / a.contactosTotal * 10) / 10 : 0,
+      tasaContactos: a.contactosTotal > 0 ? Math.round(contactados / a.contactosTotal * 100) : 0,
+      score,
+      radar:[
+        {subject:"Llamadas",   value:Math.round((a.llamadasTotal/maxL)*100)},
+        {subject:"Contactación",value:a.llamadasTotal>0?Math.round(tasaC*100):0},
+        {subject:"Mensajes",   value:Math.round((a.mensajesTotal/maxM)*100)},
+        {subject:"Gestión",    value:Math.round(g*100)},
+        {subject:"Contactos",  value:Math.round((a.contactosTotal/maxC2)*100)},
+      ],
+    };
+  }).sort((a,b) => b.score - a.score);
+
+  const byAgent = agentList.map(a=>({name:a.name,value:a.contactosTotal})).sort((a,b)=>b.value-a.value);
   const stageDistrib = Object.entries(leads.reduce((acc,l)=>{const s=l["Stage"]||"N/A";acc[s]=(acc[s]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
   const pipelineDist = Object.entries(leads.reduce((acc,l)=>{const p=l["Pipeline"]||"Sin pipeline";acc[p]=(acc[p]||0)+1;return acc;},{})).map(([name,value])=>({name,value}));
   const nivelesInteres = Object.entries(contactos.reduce((acc,c)=>{const n=c["🌡️ Nivel de interés del prospecto"]||"";if(n)acc[n]=(acc[n]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
   const fuentes = Object.entries(contactos.reduce((acc,c)=>{const s=c["Source"]||"N/A";acc[s]=(acc[s]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
+  const llamadasPorAgente = Object.entries(llamadasRaw.reduce((acc,r)=>{const a=r["Llamar realizada Vía"]||"N/A";acc[a]=(acc[a]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value).slice(0,8);
+  const estadoLlamadas = Object.entries(llamadasRaw.reduce((acc,r)=>{const s=r["Estado de la llamada"]||"N/A";acc[s]=(acc[s]||0)+1;return acc;},{})).map(([name,value])=>({name,value}));
 
   return {
     id:`report_ghl_${Date.now()}`,
     label:`GHL Sync — ${syncDate}`,
     period:syncDate, createdAt:syncDate, isGHLSync:true,
     summary:{
-      totalLlamadas:0, contestadas:0, perdidas:0, durProm:0, tasaContestacion:0,
+      totalLlamadas:llamadasRaw.length, contestadas, perdidas, durProm, tasaContestacion:tasaContest,
       totalMensajes:mensajesRaw.length,
       unread:mensajesRaw.filter(m=>m["Tipo"]==="Unread").length,
       inbound:mensajesRaw.filter(m=>m["Dirección del último mensaje"]==="inbound").length,
@@ -340,7 +406,7 @@ function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[]) {
       totalContactos:contactos.length, totalLeads:leads.length,
       presTotal:0, presCon:0, clientesAbiertos:0, clientesGanados:0, clientesPerdidos:0,
     },
-    charts:{ contactosAsignados:byAgent, stageDistrib, pipelineDist, interesDist:nivelesInteres, contactosPorMedio:fuentes },
+    charts:{ contactosAsignados:byAgent, stageDistrib, pipelineDist, interesDist:nivelesInteres, contactosPorMedio:fuentes, llamadasPorAgente, estadoLlamadas },
     agentScores, datasets,
   };
 }
@@ -1130,6 +1196,7 @@ function GHLSyncPanel({ onReportReady }) {
   const [syncError, setSyncError] = useState(null);
   const [totalContacts, setTotalContacts] = useState(0);
   const [totalMensajes, setTotalMensajes] = useState(0);
+  const [totalLlamadas, setTotalLlamadas] = useState(0);
 
   useEffect(() => { checkServer(); }, []);
 
@@ -1150,11 +1217,13 @@ function GHLSyncPanel({ onReportReady }) {
       const data = await r.json();
       if (!r.ok || !data.contacts) throw new Error(data.error || "Respuesta inválida");
       const today = new Date().toISOString().split("T")[0];
-      const mensajes = data.mensajes || [];
-      const report = buildReportFromGHLContacts(data.contacts, today, mensajes);
+      const mensajes  = data.mensajes  || [];
+      const llamadas  = data.llamadas  || [];
+      const report = buildReportFromGHLContacts(data.contacts, today, mensajes, llamadas);
       setLastSync(new Date().toISOString());
       setTotalContacts(data.total || data.contacts.length);
       setTotalMensajes(mensajes.length);
+      setTotalLlamadas(llamadas.length);
       setStatus("connected");
       onReportReady(report);
     } catch(err) { setStatus("error"); setSyncError(err.message.slice(0,80)); }
@@ -1178,7 +1247,7 @@ function GHLSyncPanel({ onReportReady }) {
         </div>
       ) : (
         <>
-          {totalContacts>0&&<div style={{color:"#8A9BB8",fontFamily:MONO,fontSize:10,marginBottom:1}}>{totalContacts.toLocaleString()} contactos{totalMensajes>0&&<span style={{color:"#5A7090"}}> · {totalMensajes.toLocaleString()} msgs</span>}</div>}
+          {totalContacts>0&&<div style={{color:"#8A9BB8",fontFamily:MONO,fontSize:10,marginBottom:1}}>{totalContacts.toLocaleString()} contactos{totalLlamadas>0&&<span style={{color:"#5A7090"}}> · {totalLlamadas.toLocaleString()} 📞</span>}{totalMensajes>0&&<span style={{color:"#5A7090"}}> · {totalMensajes.toLocaleString()} 💬</span>}</div>}
           {lastSync&&<div style={{color:"#3A5070",fontFamily:MONO,fontSize:9,marginBottom:5}}>
             {new Date(lastSync).toLocaleDateString("es-MX",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
           </div>}
