@@ -1,6 +1,6 @@
 // Vercel Serverless Function: GET /api/sync
-// Descarga contactos y conversaciones de GHL directamente desde el servidor de Vercel.
-// Las credenciales van como variables de entorno en el proyecto Vercel (Settings → Environment Variables).
+// Descarga contactos, conversaciones, usuarios y oportunidades de GHL.
+// Las credenciales van como variables de entorno en Vercel → Settings → Environment Variables.
 
 const GHL_HEADERS = () => ({
   Authorization: `Bearer ${process.env.GHL_API_KEY}`,
@@ -8,26 +8,86 @@ const GHL_HEADERS = () => ({
   Version: "2021-07-28",
 });
 
+// ── Fetch helpers ─────────────────────────────────────────────────────────────
+async function ghlGet(path, params = {}) {
+  const url = new URL(`https://services.leadconnectorhq.com${path}`);
+  Object.entries(params).forEach(([k, v]) => v && url.searchParams.set(k, v));
+  const r = await fetch(url.toString(), { headers: GHL_HEADERS() });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(`GHL ${path} → ${r.status}: ${JSON.stringify(err)}`);
+  }
+  return r.json();
+}
+
+// ── Fetch users → { userId: "Nombre Apellido" } ───────────────────────────────
+async function fetchUserMap(locationId) {
+  try {
+    const data = await ghlGet("/users/", { locationId });
+    const map = {};
+    (data.users || []).forEach((u) => {
+      if (u.id) map[u.id] = u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim();
+    });
+    return map;
+  } catch (e) {
+    console.warn("⚠️ fetchUserMap:", e.message);
+    return {};
+  }
+}
+
+// ── Fetch opportunities → { contactId: { pipeline, stage, status } } ──────────
+async function fetchOpportunityMap(locationId) {
+  const map = {};
+  let startAfterId = null;
+  const PRIORITY = ["01 - Desarrollos", "02 - Cierre", "Rentas Vacacionales"];
+
+  for (let page = 0; page < 30; page++) {
+    try {
+      const data = await ghlGet("/opportunities/search", {
+        location_id: locationId,
+        limit: "100",
+        startAfterId,
+      });
+      const opps = data.opportunities || [];
+
+      opps.forEach((opp) => {
+        const contactId = opp.contactId || opp.contact?.id;
+        if (!contactId) return;
+        const pipelineName = opp.pipeline?.name || opp.pipelineName || "";
+        const stageName    = opp.pipelineStage?.name || opp.pipelineStageName || opp.name || "";
+        const status       = opp.status || "open";
+
+        const current = map[contactId];
+        const isMainPipeline = PRIORITY.includes(pipelineName);
+        const currentIsMain  = current && PRIORITY.includes(current.pipeline);
+
+        if (!current ||
+            (isMainPipeline && !currentIsMain) ||
+            (isMainPipeline && currentIsMain && status === "open" && current.status !== "open")) {
+          map[contactId] = { pipeline: pipelineName, stage: stageName, status };
+        }
+      });
+
+      const nextId = data.meta?.startAfterId;
+      if (opps.length < 100 || !nextId) break;
+      startAfterId = opps[opps.length - 1].id;
+    } catch (e) {
+      console.warn("⚠️ fetchOpportunityMap page", page, e.message);
+      break;
+    }
+  }
+  return map;
+}
+
 // ── Fetch contacts (paginado) ─────────────────────────────────────────────────
 async function fetchContacts(locationId) {
   const all = [];
   let startAfterId = null;
 
   while (true) {
-    const url = new URL("https://services.leadconnectorhq.com/contacts/");
-    url.searchParams.set("locationId", locationId);
-    url.searchParams.set("limit", "100");
-    if (startAfterId) url.searchParams.set("startAfterId", startAfterId);
-
-    const r = await fetch(url.toString(), { headers: GHL_HEADERS() });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      throw new Error(`GHL Contacts API ${r.status}: ${JSON.stringify(err)}`);
-    }
-    const data = await r.json();
+    const data = await ghlGet("/contacts/", { locationId, limit: "100", startAfterId });
     const batch = data.contacts || [];
     all.push(...batch);
-
     const nextId = data.meta?.startAfterId;
     if (batch.length < 100 || !nextId || all.length >= (data.meta?.total || Infinity)) break;
     startAfterId = batch[batch.length - 1].id;
@@ -41,25 +101,19 @@ async function fetchConversations(locationId) {
   let startAfterId = null;
 
   for (let page = 0; page < 10; page++) {
-    const url = new URL("https://services.leadconnectorhq.com/conversations/search");
-    url.searchParams.set("locationId", locationId);
-    url.searchParams.set("limit", "100");
-    if (startAfterId) url.searchParams.set("startAfterId", startAfterId);
-
-    const r = await fetch(url.toString(), { headers: GHL_HEADERS() });
-    if (!r.ok) break; // No detiene el proceso, solo omite conversaciones
-    const data = await r.json();
-    const batch = data.conversations || [];
-    all.push(...batch);
-
-    if (batch.length < 100) break;
-    startAfterId = batch[batch.length - 1].id;
+    try {
+      const data = await ghlGet("/conversations/search", { locationId, limit: "100", startAfterId });
+      const batch = data.conversations || [];
+      all.push(...batch);
+      if (batch.length < 100) break;
+      startAfterId = batch[batch.length - 1].id;
+    } catch { break; }
   }
   return all;
 }
 
-// ── Normaliza contacto al formato CSV de GHL ──────────────────────────────────
-function normalizeContact(c) {
+// ── Normaliza contacto con nombres de columna del CSV de GHL ─────────────────
+function normalizeContact(c, userMap, oppMap) {
   const custom = {};
   (c.customField || []).forEach((f) => {
     if (f.id) custom[f.id] = f.value;
@@ -70,59 +124,63 @@ function normalizeContact(c) {
   });
 
   const fullName = c.contactName || `${c.firstName || ""} ${c.lastName || ""}`.trim();
-  const owner    = c.ownerName || c.assignedTo || "";
-  const created  = c.dateAdded || c.createdAt || "";
-  const pipeline = c.pipelineName || "";
-  const stage    = c.pipelineStage || c.pipelineStageName || "";
-  const tags     = Array.isArray(c.tags) ? c.tags.join(", ") : (c.tags || "");
+  // Resuelve ID de usuario → nombre real
+  const ownerName = c.ownerName || userMap[c.assignedTo] || c.assignedTo || "";
+  const created   = c.dateAdded || c.createdAt || "";
+  const tags      = Array.isArray(c.tags) ? c.tags.join(", ") : (c.tags || "");
+
+  // Pipeline/Stage: del mapa de oportunidades (más completo que el campo de contacto)
+  const opp      = oppMap[c.id] || {};
+  const pipeline = opp.pipeline || c.pipelineName || "";
+  const stage    = opp.stage    || c.pipelineStage || c.pipelineStageName || "";
 
   return {
-    "Contact Id":   c.id || "",
-    "First Name":   c.firstName || "",
-    "Last Name":    c.lastName || "",
-    "Phone":        c.phone || "",
-    "Email":        c.email || "",
+    "Contact Id":    c.id || "",
+    "First Name":    c.firstName || "",
+    "Last Name":     c.lastName || "",
+    "Phone":         c.phone || "",
+    "Email":         c.email || "",
     "Business Name": c.companyName || "",
-    "Created":      created,
+    "Created":       created,
     "Last Activity": c.lastActivityDate || "",
-    "Tags":         tags,
-    "Source":       c.source || "",
-    "Contact Type": c.type || "lead",
-    "Assigned To":  owner,
-    "Updated":      c.dateUpdated || "",
+    "Tags":          tags,
+    "Source":        c.source || "",
+    "Contact Type":  c.type || "lead",
+    "Assigned To":   ownerName,
+    "Updated":       c.dateUpdated || "",
     "Opportunities": pipeline && stage ? `open ${pipeline} ${stage}` : "",
-    "Last Note":    c.lastNote || "",
-    // Custom fields con nombre de CSV
-    "🌡️ Nivel de interés del prospecto":          custom["nivel_de_interes_del_prospecto"] || custom["nivel_interes"] || "",
-    "💸 Presupuesto estimado":                    custom["presupuesto_estimado"] || custom["presupuesto"] || "",
-    "🏦 ¿Cuenta con financiamiento o crédito?":   custom["cuenta_con_financiamiento_o_credito"] || custom["financiamiento"] || "",
-    "¿Dónde te gustaria invertir?":               custom["donde_te_gustaria_invertir"] || custom["donde_invertir"] || "",
-    "¿En que te gustaria invertir?":              custom["en_que_te_gustaria_invertir"] || custom["en_que_invertir"] || "",
-    "Comentario de NOTA primer contacto":         custom["comentario_de_nota_primer_contacto"] || "",
-    "Historial de NOTAS para clientes":           custom["historial_de_notas_para_clientes"] || "",
-    "Turno de asignación":                        custom["turno_de_asignacion"] || "",
-    "Propiedad seleccionada":                     custom["propiedad_seleccionada"] || custom["propiedad"] || "",
-    "Fecha de visita":                            custom["fecha_de_visita"] || "",
-    // Nombres compatibles con el dashboard
+    "Last Note":     c.lastNote || "",
+    // Custom fields con nombres del CSV
+    "🌡️ Nivel de interés del prospecto":        custom["nivel_de_interes_del_prospecto"] || custom["nivel_interes"] || "",
+    "💸 Presupuesto estimado":                  custom["presupuesto_estimado"] || custom["presupuesto"] || "",
+    "🏦 ¿Cuenta con financiamiento o crédito?": custom["cuenta_con_financiamiento_o_credito"] || custom["financiamiento"] || "",
+    "¿Dónde te gustaria invertir?":             custom["donde_te_gustaria_invertir"] || custom["donde_invertir"] || "",
+    "¿En que te gustaria invertir?":            custom["en_que_te_gustaria_invertir"] || custom["en_que_invertir"] || "",
+    "Comentario de NOTA primer contacto":       custom["comentario_de_nota_primer_contacto"] || "",
+    "Historial de NOTAS para clientes":         custom["historial_de_notas_para_clientes"] || "",
+    "Turno de asignación":                      custom["turno_de_asignacion"] || "",
+    "Propiedad seleccionada":                   custom["propiedad_seleccionada"] || custom["propiedad"] || "",
+    "Fecha de visita":                          custom["fecha_de_visita"] || "",
+    // Columnas compatibles con el dashboard
     "Nombre del Contacto": fullName,
     "Número de teléfono":  c.phone || "",
-    "Usuario asignado":    owner,
+    "Usuario asignado":    ownerName,
     "Created On":          created,
     "Pipeline":            pipeline,
     "Pipeline Name":       pipeline,
     "Stage":               stage,
     "{{contact.suma_de_notas_de_agente}}": custom["suma_de_notas_de_agente"] || "0",
-    // Todos los custom fields crudos
     ...custom,
   };
 }
 
-// ── Normaliza conversación al formato CSV de mensajes ─────────────────────────
-function normalizeConversation(c) {
+// ── Normaliza conversación con nombres de usuario resueltos ──────────────────
+function normalizeConversation(c, userMap) {
+  const ownerName = userMap[c.assignedTo] || c.ownerName || c.assignedTo || "";
   return {
     "Nombre del Contacto":          c.contactName || c.fullName || "",
     "Mensajes no leídos":           String(c.unreadCount || 0),
-    "Asignado a":                   c.assignedTo || c.ownerName || "",
+    "Asignado a":                   ownerName,
     "Tipo":                         (c.unreadCount || 0) > 0 ? "Unread" : "Read",
     "Dirección del último mensaje": c.lastMessageDirection || "",
     "Canal del último Mensaje":     c.lastMessageChannel || c.lastMessageType || c.type || "",
@@ -139,19 +197,21 @@ export default async function handler(req, res) {
   if (!API_KEY || !LOCATION_ID) {
     return res.status(500).json({
       ok: false,
-      error: "Faltan variables de entorno GHL_API_KEY y GHL_LOCATION_ID. Configúralas en Vercel → Settings → Environment Variables.",
+      error: "Faltan GHL_API_KEY y GHL_LOCATION_ID en las variables de entorno de Vercel.",
     });
   }
 
   try {
-    // Descarga contactos y conversaciones en paralelo
-    const [rawContacts, rawConversations] = await Promise.all([
+    // Descarga en paralelo: contactos, conversaciones, usuarios y oportunidades
+    const [rawContacts, rawConversations, userMap, oppMap] = await Promise.all([
       fetchContacts(LOCATION_ID),
-      fetchConversations(LOCATION_ID).catch(() => []), // conversaciones opcionales
+      fetchConversations(LOCATION_ID).catch(() => []),
+      fetchUserMap(LOCATION_ID).catch(() => ({})),
+      fetchOpportunityMap(LOCATION_ID).catch(() => ({})),
     ]);
 
-    const contacts = rawContacts.map(normalizeContact);
-    const mensajes = rawConversations.map(normalizeConversation);
+    const contacts = rawContacts.map((c) => normalizeContact(c, userMap, oppMap));
+    const mensajes = rawConversations.map((c) => normalizeConversation(c, userMap));
 
     res.json({
       ok:        true,

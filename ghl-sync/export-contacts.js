@@ -76,6 +76,77 @@ async function fetchAllContacts() {
   return allContacts;
 }
 
+// ── Helper para llamadas a la API de GHL ──────────────────────────────────────
+async function ghlGet(path, params = {}) {
+  const url = new URL(`https://services.leadconnectorhq.com${path}`);
+  Object.entries(params).forEach(([k, v]) => v && url.set ? url.searchParams.set(k, v) : null);
+  // Usar axios con params
+  const response = await axios.get(`https://services.leadconnectorhq.com${path}`, {
+    headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json", Version: "2021-07-28" },
+    params,
+    timeout: 30000,
+  });
+  return response.data;
+}
+
+// ── Fetch usuarios → { userId: "Nombre Apellido" } ────────────────────────────
+async function fetchUserMap() {
+  try {
+    const data = await ghlGet("/users/", { locationId: LOCATION_ID });
+    const map = {};
+    (data.users || []).forEach((u) => {
+      if (u.id) map[u.id] = u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim();
+    });
+    console.log(`  👥 ${Object.keys(map).length} usuarios cargados`);
+    return map;
+  } catch (e) {
+    console.warn("⚠️  fetchUserMap:", e.response?.data || e.message);
+    return {};
+  }
+}
+
+// ── Fetch oportunidades → { contactId: { pipeline, stage, status } } ──────────
+async function fetchOpportunityMap() {
+  const map = {};
+  let startAfterId = null;
+  const PRIORITY = ["01 - Desarrollos", "02 - Cierre", "Rentas Vacacionales"];
+  console.log("🎯 Descargando oportunidades (pipeline/stage)...");
+
+  for (let page = 0; page < 30; page++) {
+    try {
+      const params = { location_id: LOCATION_ID, limit: 100 };
+      if (startAfterId) params.startAfterId = startAfterId;
+      const data = await ghlGet("/opportunities/search", params);
+      const opps = data.opportunities || [];
+
+      opps.forEach((opp) => {
+        const contactId = opp.contactId || opp.contact?.id;
+        if (!contactId) return;
+        const pipelineName = opp.pipeline?.name || opp.pipelineName || "";
+        const stageName    = opp.pipelineStage?.name || opp.pipelineStageName || opp.name || "";
+        const status       = opp.status || "open";
+        const current      = map[contactId];
+        const isMain       = PRIORITY.includes(pipelineName);
+        const curIsMain    = current && PRIORITY.includes(current.pipeline);
+        if (!current || (isMain && !curIsMain) ||
+            (isMain && curIsMain && status === "open" && current.status !== "open")) {
+          map[contactId] = { pipeline: pipelineName, stage: stageName, status };
+        }
+      });
+
+      console.log(`  🎯 Página ${page + 1}: ${opps.length} oportunidades (contactos mapeados: ${Object.keys(map).length})`);
+      const nextId = data.meta?.startAfterId;
+      if (opps.length < 100 || !nextId) break;
+      startAfterId = opps[opps.length - 1].id;
+      await new Promise((r) => setTimeout(r, 200));
+    } catch (e) {
+      console.warn("⚠️  fetchOpportunityMap página", page, e.response?.data || e.message);
+      break;
+    }
+  }
+  return map;
+}
+
 // Parsea el campo "Opportunities" de GHL: "open 01 - Desarrollos Interesado en proyecto 🤖"
 // Devuelve { status, pipeline, stage } del pipeline principal
 function parseMainOpportunity(oppsStr) {
@@ -107,7 +178,7 @@ function parseMainOpportunity(oppsStr) {
   return parsed.find((o) => o.status === "open") || parsed[0] || { status: "", pipeline: "", stage: "" };
 }
 
-function normalizeContact(c) {
+function normalizeContact(c, userMap = {}, oppMap = {}) {
   // Extrae custom fields a un objeto plano (por id Y por fieldKey)
   const custom = {};
   if (Array.isArray(c.customField)) {
@@ -123,12 +194,14 @@ function normalizeContact(c) {
 
   const tags = Array.isArray(c.tags) ? c.tags.join(", ") : (c.tags || "");
   const fullName = c.contactName || `${c.firstName || ""} ${c.lastName || ""}`.trim();
-  const owner = c.ownerName || c.assignedTo || "";
+  // Resuelve el ID de usuario → nombre real del agente
+  const owner = c.ownerName || userMap[c.assignedTo] || c.assignedTo || "";
   const created = c.dateAdded || c.createdAt || "";
 
-  // Pipeline/Stage: primero del API, si no del campo Opportunities
-  const apiPipeline = c.pipelineName || "";
-  const apiStage = c.pipelineStage || c.pipelineStageName || "";
+  // Pipeline/Stage: del mapa de oportunidades (más completo que el campo de contacto)
+  const opp = oppMap[c.id] || {};
+  const apiPipeline = opp.pipeline || c.pipelineName || "";
+  const apiStage    = opp.stage    || c.pipelineStage || c.pipelineStageName || "";
   const oppsStr = c.opportunities || "";
   const mainOpp = (!apiPipeline && oppsStr) ? parseMainOpportunity(oppsStr) : { pipeline: apiPipeline, stage: apiStage, status: "open" };
   const pipeline = mainOpp.pipeline || apiPipeline;
@@ -192,23 +265,83 @@ function normalizeContact(c) {
   };
 }
 
+// ── Fetch Conversations (mensajes) ────────────────────────────────────────────
+async function fetchAllConversations() {
+  let all = [];
+  let startAfterId = null;
+  let total = 0;
+  console.log("💬 Descargando conversaciones...");
+
+  while (true) {
+    try {
+      const params = { locationId: LOCATION_ID, limit: 100 };
+      if (startAfterId) params.startAfterId = startAfterId;
+
+      const res = await axios.get("https://services.leadconnectorhq.com/conversations/search", {
+        headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json", Version: "2021-07-28" },
+        params,
+        timeout: 30000,
+      });
+
+      const convs = res.data.conversations || [];
+      all = all.concat(convs);
+      if (!total) total = res.data.meta?.total || 0;
+      console.log(`  💬 ${convs.length} conversaciones (acumulado: ${all.length}${total ? "/" + total : ""})`);
+
+      const nextId = res.data.meta?.startAfterId;
+      if (convs.length < 100 || !nextId || all.length >= total) break;
+      startAfterId = convs[convs.length - 1].id;
+      await new Promise((r) => setTimeout(r, 300));
+    } catch (err) {
+      console.warn("⚠️  Error al descargar conversaciones:", err.response?.data || err.message);
+      break; // No detiene el proceso, solo omite conversaciones
+    }
+  }
+  return all;
+}
+
+function normalizeConversation(c, userMap = {}) {
+  const ownerName = c.ownerName || userMap[c.assignedTo] || c.assignedTo || "";
+  return {
+    "Nombre del Contacto": c.contactName || c.fullName || "",
+    "Mensajes no leídos": String(c.unreadCount || 0),
+    "Asignado a": ownerName,
+    "Tipo": (c.unreadCount || 0) > 0 ? "Unread" : "Read",
+    "Dirección del último mensaje": c.lastMessageDirection || "",
+    "Canal del último Mensaje": c.lastMessageChannel || c.lastMessageType || c.type || "",
+    "Creada Activado": c.dateCreated || c.dateUpdated || "",
+    "Contact Id": c.contactId || "",
+  };
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
-  const contacts = await fetchAllContacts();
-  const normalized = contacts.map(normalizeContact);
+  // Carga usuarios y oportunidades en paralelo con los contactos/conversaciones
+  const [rawContacts, rawConversations, userMap, oppMap] = await Promise.all([
+    fetchAllContacts(),
+    fetchAllConversations(),
+    fetchUserMap(),
+    fetchOpportunityMap(),
+  ]);
+
+  const contacts = rawContacts.map((c) => normalizeContact(c, userMap, oppMap));
+  const mensajes = rawConversations.map((c) => normalizeConversation(c, userMap));
 
   const today = new Date().toISOString().split("T")[0];
+  const updatedAt = new Date().toISOString();
 
-  // Guarda contacts-latest.json (siempre el más reciente)
+  // contacts-latest.json
   const latestPath = path.join(OUTPUT_DIR, "contacts-latest.json");
-  fs.writeFileSync(latestPath, JSON.stringify({ updatedAt: new Date().toISOString(), total: normalized.length, contacts: normalized }, null, 2));
+  fs.writeFileSync(latestPath, JSON.stringify({ updatedAt, total: contacts.length, contacts, mensajes }, null, 2));
 
-  // Guarda backup con fecha
+  // Backup con fecha
   const backupPath = path.join(OUTPUT_DIR, `contacts-${today}.json`);
-  fs.writeFileSync(backupPath, JSON.stringify({ updatedAt: new Date().toISOString(), total: normalized.length, contacts: normalized }, null, 2));
+  fs.writeFileSync(backupPath, JSON.stringify({ updatedAt, total: contacts.length, contacts, mensajes }, null, 2));
 
-  console.log(`\n✅ ${normalized.length} contactos guardados en:`);
+  console.log(`\n✅ Sincronización completa:`);
+  console.log(`   👥 ${contacts.length} contactos`);
+  console.log(`   💬 ${mensajes.length} conversaciones`);
   console.log(`   📄 ${latestPath}`);
-  console.log(`   💾 ${backupPath}`);
 }
 
 main();
