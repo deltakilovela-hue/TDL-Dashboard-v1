@@ -25,42 +25,44 @@ if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
 
+// Los tokens "pit-..." son de la API v2 de GHL (services.leadconnectorhq.com)
+// La paginación v2 usa startAfterId en lugar de skip
 async function fetchAllContacts() {
   let allContacts = [];
-  let page = 1;
   const limit = 100;
-  let hasMore = true;
+  let startAfterId = null;
+  let total = 0;
 
-  console.log("🔄 Descargando contactos de GoHighLevel...");
+  console.log("🔄 Descargando contactos de GoHighLevel (API v2)...");
 
-  while (hasMore) {
+  while (true) {
     try {
-      const response = await axios.get("https://rest.gohighlevel.com/v1/contacts/", {
+      const params = { locationId: LOCATION_ID, limit };
+      if (startAfterId) params.startAfterId = startAfterId;
+
+      const response = await axios.get("https://services.leadconnectorhq.com/contacts/", {
         headers: {
           Authorization: `Bearer ${API_KEY}`,
           "Content-Type": "application/json",
+          Version: "2021-07-28",
         },
-        params: {
-          locationId: LOCATION_ID,
-          limit,
-          skip: (page - 1) * limit,
-        },
+        params,
         timeout: 30000,
       });
 
       const contacts = response.data.contacts || [];
       allContacts = allContacts.concat(contacts);
+      if (!total) total = response.data.meta?.total || response.data.total || 0;
 
-      const total = response.data.meta?.total || response.data.total || 0;
-      console.log(`  📦 Página ${page}: ${contacts.length} contactos (total: ${allContacts.length}/${total})`);
+      console.log(`  📦 ${contacts.length} contactos descargados (total acumulado: ${allContacts.length}${total ? "/" + total : ""})`);
 
-      if (contacts.length < limit || allContacts.length >= total) {
-        hasMore = false;
-      } else {
-        page++;
-        // Pequeña pausa para no saturar la API
-        await new Promise((r) => setTimeout(r, 300));
+      // Siguiente página: GHL v2 usa startAfterId del último contacto
+      const nextId = response.data.meta?.startAfterId || response.data.meta?.nextPageUrl;
+      if (contacts.length < limit || !nextId || allContacts.length >= total) {
+        break;
       }
+      startAfterId = contacts[contacts.length - 1].id;
+      await new Promise((r) => setTimeout(r, 300));
     } catch (err) {
       if (err.response) {
         console.error(`❌ Error API: ${err.response.status} - ${JSON.stringify(err.response.data)}`);
