@@ -252,68 +252,87 @@ function buildSummaryFromDatasets(datasets) {
 // ── GHL API Integration ───────────────────────────────────────────────────────
 const GHL_SERVER = "http://localhost:3001";
 
-function buildReportFromGHLContacts(contacts, syncDate) {
-  // Convert GHL contacts → contactos CSV format
-  const contactos = contacts.map(c => ({
-    "Nombre del Contacto": c.fullName || `${c.firstName||""} ${c.lastName||""}`.trim(),
-    "Número de teléfono": c.phone || "",
-    "Usuario asignado": c.ownerName || c.assignedTo || "",
-    "Correo electrónico": c.email || "",
-    "Creada Activado": c.createdAt || "",
-    "Created On": c.createdAt || "",
-    "Tags": c.tags || "",
-    "Pipeline": c.pipelineName || "",
-    "Stage": c.pipelineStage || "",
-    "{{contact.suma_de_notas_de_agente}}": c.notasAgente || "0",
-  }));
+// Parsea "Opportunities" del JSON de GHL: "open 01 - Desarrollos Interesado en proyecto 🤖"
+function parseMainOpportunityClient(oppsStr) {
+  if (!oppsStr) return { status:"", pipeline:"", stage:"" };
+  const KNOWN = ["01 - Desarrollos","02 - Cierre","Rentas Vacacionales","Seguimiento IA","Recepción Proveedores"];
+  const entries = oppsStr.split(/, (?=open |won |lost )/i);
+  const parsed = entries.map(entry => {
+    const sm = entry.match(/^(open|won|lost)\s+/i);
+    const status = sm ? sm[1].toLowerCase() : "open";
+    const rest = entry.replace(/^(open|won|lost)\s+/i,"").trim();
+    let pipeline="", stage=rest;
+    for(const p of KNOWN){ if(rest===p||rest.startsWith(p+" ")){pipeline=p;stage=rest.slice(p.length).trim();break;} }
+    return {status,pipeline,stage};
+  });
+  for(const p of ["01 - Desarrollos","02 - Cierre","Rentas Vacacionales"]){
+    const f=parsed.find(o=>o.pipeline===p); if(f) return f;
+  }
+  return parsed.find(o=>o.status==="open")||parsed[0]||{status:"",pipeline:"",stage:""};
+}
 
-  // Contacts with a pipeline stage → "leads" format
-  const leads = contacts.filter(c => c.pipelineStage).map(c => ({
-    "Primary Contact Name": c.fullName || `${c.firstName||""} ${c.lastName||""}`.trim(),
-    "Assigned User": c.ownerName || c.assignedTo || "",
-    "Stage": c.pipelineStage || "",
-    "Pipeline Name": c.pipelineName || "",
-    "Pipeline": c.pipelineName || "",
-    "Source": c.source || "",
-    "Created On": c.createdAt || "",
-    "{{contact.suma_de_notas_de_agente}}": c.notasAgente || "0",
-  }));
+function buildReportFromGHLContacts(contacts, syncDate) {
+  // Los contactos ya vienen con los mismos nombres de columna que el CSV de GHL
+  // ("Assigned To", "Stage", "Pipeline", "Nombre del Contacto", etc.)
+
+  const contactos = contacts;
+
+  // Para leads: contactos con Stage o Opportunities
+  const leads = contacts
+    .filter(c => c["Stage"] || c["Opportunities"])
+    .map(c => {
+      const opp = (!c["Stage"] && c["Opportunities"]) ? parseMainOpportunityClient(c["Opportunities"]) : null;
+      const stage = c["Stage"] || opp?.stage || "";
+      const pipeline = c["Pipeline"] || c["Pipeline Name"] || opp?.pipeline || "";
+      return {
+        "Primary Contact Name": c["Nombre del Contacto"] || `${c["First Name"]||""} ${c["Last Name"]||""}`.trim(),
+        "Assigned User": c["Assigned To"] || c["Usuario asignado"] || "",
+        "Stage": stage,
+        "Pipeline Name": pipeline,
+        "Pipeline": pipeline,
+        "Source": c["Source"] || "",
+        "Created On": c["Created On"] || c["Created"] || "",
+        "Tags": c["Tags"] || "",
+        "🌡️ Nivel de interés del prospecto": c["🌡️ Nivel de interés del prospecto"] || "",
+        "💸 Presupuesto estimado": c["💸 Presupuesto estimado"] || "",
+        "{{contact.suma_de_notas_de_agente}}": c["{{contact.suma_de_notas_de_agente}}"] || "0",
+      };
+    });
 
   const datasets = { llamadas:[], mensajes:[], contactos, leads, presupuestos:[] };
 
-  // Simple agent scores based on contact count only
   const agentCounts = {};
   contactos.forEach(c => {
-    const a = c["Usuario asignado"]; if (!a || a==="N/A" || a==="") return;
-    agentCounts[a] = (agentCounts[a]||0) + 1;
+    const a = c["Assigned To"]||c["Usuario asignado"]; if(!a||a==="N/A"||a==="") return;
+    agentCounts[a] = (agentCounts[a]||0)+1;
   });
-  const maxContacts = Math.max(...Object.values(agentCounts), 1);
-  const agentScores = Object.entries(agentCounts).map(([name, total]) => ({
-    name, score: Math.min(100, Math.round((total/maxContacts)*100)),
+  const maxC = Math.max(...Object.values(agentCounts), 1);
+  const agentScores = Object.entries(agentCounts).map(([name,total]) => ({
+    name, score:Math.min(100,Math.round((total/maxC)*100)),
     llamadasTotal:0, llamadasContestadas:0, tasaContestacion:0, durProm:0,
     mensajesTotal:0, mensajesUnread:0, mensajesInbound:0,
     contactosTotal:total, leadsAbandonados:0,
     actividadesTotal:total, leadsContactados:total, actividadesPorLead:1, tasaContactos:100,
-    radar:[{subject:"Llamadas",value:0},{subject:"Contactación",value:0},{subject:"Mensajes",value:0},{subject:"Gestión",value:100},{subject:"Contactos",value:Math.round((total/maxContacts)*100)}],
-  })).sort((a,b) => b.contactosTotal - a.contactosTotal);
+    radar:[{subject:"Llamadas",value:0},{subject:"Contactación",value:0},{subject:"Mensajes",value:0},{subject:"Gestión",value:100},{subject:"Contactos",value:Math.round((total/maxC)*100)}],
+  })).sort((a,b)=>b.contactosTotal-a.contactosTotal);
 
-  const contactosByAgent = Object.entries(agentCounts).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
+  const byAgent = Object.entries(agentCounts).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
   const stageDistrib = Object.entries(leads.reduce((acc,l)=>{const s=l["Stage"]||"N/A";acc[s]=(acc[s]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
-
-  const summary = {
-    totalLlamadas:0, contestadas:0, perdidas:0, durProm:0, tasaContestacion:0,
-    totalMensajes:0, unread:0, inbound:0, outbound:0,
-    totalContactos:contactos.length, totalLeads:leads.length,
-    presTotal:0, presCon:0, clientesAbiertos:0, clientesGanados:0, clientesPerdidos:0,
-  };
+  const pipelineDist = Object.entries(leads.reduce((acc,l)=>{const p=l["Pipeline"]||"Sin pipeline";acc[p]=(acc[p]||0)+1;return acc;},{})).map(([name,value])=>({name,value}));
+  const nivelesInteres = Object.entries(contactos.reduce((acc,c)=>{const n=c["🌡️ Nivel de interés del prospecto"]||"";if(n)acc[n]=(acc[n]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
+  const fuentes = Object.entries(contactos.reduce((acc,c)=>{const s=c["Source"]||"N/A";acc[s]=(acc[s]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
 
   return {
-    id: `report_ghl_${Date.now()}`,
-    label: `GHL Sync — ${syncDate}`,
-    period: syncDate,
-    createdAt: syncDate,
-    isGHLSync: true,
-    summary, charts:{ contactosAsignados:contactosByAgent, stageDistrib },
+    id:`report_ghl_${Date.now()}`,
+    label:`GHL Sync — ${syncDate}`,
+    period:syncDate, createdAt:syncDate, isGHLSync:true,
+    summary:{
+      totalLlamadas:0, contestadas:0, perdidas:0, durProm:0, tasaContestacion:0,
+      totalMensajes:0, unread:0, inbound:0, outbound:0,
+      totalContactos:contactos.length, totalLeads:leads.length,
+      presTotal:0, presCon:0, clientesAbiertos:0, clientesGanados:0, clientesPerdidos:0,
+    },
+    charts:{ contactosAsignados:byAgent, stageDistrib, pipelineDist, interesDist:nivelesInteres, contactosPorMedio:fuentes },
     agentScores, datasets,
   };
 }
