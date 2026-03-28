@@ -250,7 +250,11 @@ function buildSummaryFromDatasets(datasets) {
 }
 
 // ── GHL API Integration ───────────────────────────────────────────────────────
-const GHL_SERVER = "http://localhost:3001";
+// En Vercel (producción) usa las API routes del mismo dominio: /api/...
+// En localhost (desarrollo) usa el servidor local: http://localhost:3001
+const GHL_SERVER = (typeof window !== "undefined" && window.location.hostname !== "localhost")
+  ? ""           // Vercel: /api/sync, /api/status (mismo dominio)
+  : "http://localhost:3001"; // Local: servidor Node.js
 
 // Parsea "Opportunities" del JSON de GHL: "open 01 - Desarrollos Interesado en proyecto 🤖"
 function parseMainOpportunityClient(oppsStr) {
@@ -271,11 +275,12 @@ function parseMainOpportunityClient(oppsStr) {
   return parsed.find(o=>o.status==="open")||parsed[0]||{status:"",pipeline:"",stage:""};
 }
 
-function buildReportFromGHLContacts(contacts, syncDate) {
+function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[]) {
   // Los contactos ya vienen con los mismos nombres de columna que el CSV de GHL
   // ("Assigned To", "Stage", "Pipeline", "Nombre del Contacto", etc.)
 
   const contactos = contacts;
+  // mensajesRaw ya viene normalizado con las columnas del CSV de mensajes
 
   // Para leads: contactos con Stage o Opportunities
   const leads = contacts
@@ -299,7 +304,7 @@ function buildReportFromGHLContacts(contacts, syncDate) {
       };
     });
 
-  const datasets = { llamadas:[], mensajes:[], contactos, leads, presupuestos:[] };
+  const datasets = { llamadas:[], mensajes:mensajesRaw, contactos, leads, presupuestos:[] };
 
   const agentCounts = {};
   contactos.forEach(c => {
@@ -328,7 +333,10 @@ function buildReportFromGHLContacts(contacts, syncDate) {
     period:syncDate, createdAt:syncDate, isGHLSync:true,
     summary:{
       totalLlamadas:0, contestadas:0, perdidas:0, durProm:0, tasaContestacion:0,
-      totalMensajes:0, unread:0, inbound:0, outbound:0,
+      totalMensajes:mensajesRaw.length,
+      unread:mensajesRaw.filter(m=>m["Tipo"]==="Unread").length,
+      inbound:mensajesRaw.filter(m=>m["Dirección del último mensaje"]==="inbound").length,
+      outbound:mensajesRaw.filter(m=>m["Dirección del último mensaje"]==="outbound").length,
       totalContactos:contactos.length, totalLeads:leads.length,
       presTotal:0, presCon:0, clientesAbiertos:0, clientesGanados:0, clientesPerdidos:0,
     },
@@ -1121,6 +1129,7 @@ function GHLSyncPanel({ onReportReady }) {
   const [lastSync, setLastSync] = useState(null);
   const [syncError, setSyncError] = useState(null);
   const [totalContacts, setTotalContacts] = useState(0);
+  const [totalMensajes, setTotalMensajes] = useState(0);
 
   useEffect(() => { checkServer(); }, []);
 
@@ -1129,7 +1138,7 @@ function GHLSyncPanel({ onReportReady }) {
     try {
       const r = await fetch(`${GHL_SERVER}/api/status`, { signal: AbortSignal.timeout(3000) });
       const data = await r.json();
-      if (data.ok) { setStatus("connected"); setLastSync(data.lastSync); setTotalContacts(data.totalContacts||0); }
+      if (data.ok) { setStatus("connected"); setLastSync(data.lastSync); setTotalContacts(data.totalContacts||0); setTotalMensajes(data.totalMensajes||0); }
       else setStatus("no_server");
     } catch { setStatus("no_server"); }
   }
@@ -1141,9 +1150,11 @@ function GHLSyncPanel({ onReportReady }) {
       const data = await r.json();
       if (!r.ok || !data.contacts) throw new Error(data.error || "Respuesta inválida");
       const today = new Date().toISOString().split("T")[0];
-      const report = buildReportFromGHLContacts(data.contacts, today);
+      const mensajes = data.mensajes || [];
+      const report = buildReportFromGHLContacts(data.contacts, today, mensajes);
       setLastSync(new Date().toISOString());
       setTotalContacts(data.total || data.contacts.length);
+      setTotalMensajes(mensajes.length);
       setStatus("connected");
       onReportReady(report);
     } catch(err) { setStatus("error"); setSyncError(err.message.slice(0,80)); }
@@ -1167,7 +1178,7 @@ function GHLSyncPanel({ onReportReady }) {
         </div>
       ) : (
         <>
-          {totalContacts>0&&<div style={{color:"#8A9BB8",fontFamily:MONO,fontSize:10,marginBottom:2}}>{totalContacts.toLocaleString()} contactos</div>}
+          {totalContacts>0&&<div style={{color:"#8A9BB8",fontFamily:MONO,fontSize:10,marginBottom:1}}>{totalContacts.toLocaleString()} contactos{totalMensajes>0&&<span style={{color:"#5A7090"}}> · {totalMensajes.toLocaleString()} msgs</span>}</div>}
           {lastSync&&<div style={{color:"#3A5070",fontFamily:MONO,fontSize:9,marginBottom:5}}>
             {new Date(lastSync).toLocaleDateString("es-MX",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
           </div>}
