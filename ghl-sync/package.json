@@ -1,0 +1,17 @@
+{
+  "name": "tdl-ghl-sync",
+  "version": "1.0.0",
+  "description": "Servidor de sincronización GHL para TDL Dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "sync": "node export-contacts.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

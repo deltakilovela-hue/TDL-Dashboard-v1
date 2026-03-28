@@ -249,6 +249,75 @@ function buildSummaryFromDatasets(datasets) {
   return { totalLlamadas:llamadas.length,contestadas,perdidas:llamadas.filter(r=>(r["Estado de la llamada"]||"").includes("Missed")).length,durProm:contestadas?Math.round(durTotal/contestadas):0,tasaContestacion:llamadas.length?Math.round(contestadas/llamadas.length*100):0,totalMensajes:mensajes.length,unread:mensajes.filter(r=>r["Tipo"]==="Unread").length,inbound:mensajes.filter(r=>r["Dirección del último mensaje"]==="inbound").length,outbound:mensajes.filter(r=>r["Dirección del último mensaje"]==="outbound").length,totalContactos:contactos.length,totalLeads:leads.length,presTotal,presCon:presupuestos.filter(r=>r["Presupuesto"]).length,clientesAbiertos:0,clientesGanados:0,clientesPerdidos:0 };
 }
 
+// ── GHL API Integration ───────────────────────────────────────────────────────
+const GHL_SERVER = "http://localhost:3001";
+
+function buildReportFromGHLContacts(contacts, syncDate) {
+  // Convert GHL contacts → contactos CSV format
+  const contactos = contacts.map(c => ({
+    "Nombre del Contacto": c.fullName || `${c.firstName||""} ${c.lastName||""}`.trim(),
+    "Número de teléfono": c.phone || "",
+    "Usuario asignado": c.ownerName || c.assignedTo || "",
+    "Correo electrónico": c.email || "",
+    "Creada Activado": c.createdAt || "",
+    "Created On": c.createdAt || "",
+    "Tags": c.tags || "",
+    "Pipeline": c.pipelineName || "",
+    "Stage": c.pipelineStage || "",
+    "{{contact.suma_de_notas_de_agente}}": c.notasAgente || "0",
+  }));
+
+  // Contacts with a pipeline stage → "leads" format
+  const leads = contacts.filter(c => c.pipelineStage).map(c => ({
+    "Primary Contact Name": c.fullName || `${c.firstName||""} ${c.lastName||""}`.trim(),
+    "Assigned User": c.ownerName || c.assignedTo || "",
+    "Stage": c.pipelineStage || "",
+    "Pipeline Name": c.pipelineName || "",
+    "Pipeline": c.pipelineName || "",
+    "Source": c.source || "",
+    "Created On": c.createdAt || "",
+    "{{contact.suma_de_notas_de_agente}}": c.notasAgente || "0",
+  }));
+
+  const datasets = { llamadas:[], mensajes:[], contactos, leads, presupuestos:[] };
+
+  // Simple agent scores based on contact count only
+  const agentCounts = {};
+  contactos.forEach(c => {
+    const a = c["Usuario asignado"]; if (!a || a==="N/A" || a==="") return;
+    agentCounts[a] = (agentCounts[a]||0) + 1;
+  });
+  const maxContacts = Math.max(...Object.values(agentCounts), 1);
+  const agentScores = Object.entries(agentCounts).map(([name, total]) => ({
+    name, score: Math.min(100, Math.round((total/maxContacts)*100)),
+    llamadasTotal:0, llamadasContestadas:0, tasaContestacion:0, durProm:0,
+    mensajesTotal:0, mensajesUnread:0, mensajesInbound:0,
+    contactosTotal:total, leadsAbandonados:0,
+    actividadesTotal:total, leadsContactados:total, actividadesPorLead:1, tasaContactos:100,
+    radar:[{subject:"Llamadas",value:0},{subject:"Contactación",value:0},{subject:"Mensajes",value:0},{subject:"Gestión",value:100},{subject:"Contactos",value:Math.round((total/maxContacts)*100)}],
+  })).sort((a,b) => b.contactosTotal - a.contactosTotal);
+
+  const contactosByAgent = Object.entries(agentCounts).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
+  const stageDistrib = Object.entries(leads.reduce((acc,l)=>{const s=l["Stage"]||"N/A";acc[s]=(acc[s]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
+
+  const summary = {
+    totalLlamadas:0, contestadas:0, perdidas:0, durProm:0, tasaContestacion:0,
+    totalMensajes:0, unread:0, inbound:0, outbound:0,
+    totalContactos:contactos.length, totalLeads:leads.length,
+    presTotal:0, presCon:0, clientesAbiertos:0, clientesGanados:0, clientesPerdidos:0,
+  };
+
+  return {
+    id: `report_ghl_${Date.now()}`,
+    label: `GHL Sync — ${syncDate}`,
+    period: syncDate,
+    createdAt: syncDate,
+    isGHLSync: true,
+    summary, charts:{ contactosAsignados:contactosByAgent, stageDistrib },
+    agentScores, datasets,
+  };
+}
+
 // ── UI Atoms ──────────────────────────────────────────────────────────────────
 function KPICard({ icon:Icon, label, value, sub, color=GOLD, delta }) {
   return (
@@ -1027,8 +1096,78 @@ function NewReportModal({onSave,onClose}) {
   );
 }
 
+// ── GHL Sync Panel ────────────────────────────────────────────────────────────
+function GHLSyncPanel({ onReportReady }) {
+  const [status, setStatus] = useState("checking"); // checking|connected|no_server|syncing|error
+  const [lastSync, setLastSync] = useState(null);
+  const [syncError, setSyncError] = useState(null);
+  const [totalContacts, setTotalContacts] = useState(0);
+
+  useEffect(() => { checkServer(); }, []);
+
+  async function checkServer() {
+    setStatus("checking");
+    try {
+      const r = await fetch(`${GHL_SERVER}/api/status`, { signal: AbortSignal.timeout(3000) });
+      const data = await r.json();
+      if (data.ok) { setStatus("connected"); setLastSync(data.lastSync); setTotalContacts(data.totalContacts||0); }
+      else setStatus("no_server");
+    } catch { setStatus("no_server"); }
+  }
+
+  async function syncNow() {
+    setStatus("syncing"); setSyncError(null);
+    try {
+      const r = await fetch(`${GHL_SERVER}/api/sync`);
+      const data = await r.json();
+      if (!r.ok || !data.contacts) throw new Error(data.error || "Respuesta inválida");
+      const today = new Date().toISOString().split("T")[0];
+      const report = buildReportFromGHLContacts(data.contacts, today);
+      setLastSync(new Date().toISOString());
+      setTotalContacts(data.total || data.contacts.length);
+      setStatus("connected");
+      onReportReady(report);
+    } catch(err) { setStatus("error"); setSyncError(err.message.slice(0,80)); }
+  }
+
+  const dotColor = status==="connected"?"#6DB87A":status==="syncing"||status==="checking"?GOLD:"#E8824A";
+  const noServer = status==="no_server";
+
+  return (
+    <div style={{padding:"8px 10px",background:"#070D14",borderRadius:8,margin:"8px 6px 4px",border:`1px solid ${noServer?"#1E3050":"#6DB87A33"}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+        <div style={{color:"#5A7090",fontFamily:MONO,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>GHL Auto-Sync</div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <div style={{width:6,height:6,borderRadius:"50%",background:dotColor,boxShadow:!noServer?`0 0 5px ${dotColor}88`:"none"}}/>
+          {!noServer&&<button onClick={checkServer} style={{background:"none",border:"none",cursor:"pointer",color:"#3A5070",padding:0,fontFamily:MONO,fontSize:10}} title="Verificar conexión">↻</button>}
+        </div>
+      </div>
+      {noServer ? (
+        <div style={{color:"#3A5070",fontFamily:MONO,fontSize:9,lineHeight:1.5}}>
+          Servidor no detectado.<br/>Ejecuta <span style={{color:GOLD}}>start-server.bat</span> para activar.
+        </div>
+      ) : (
+        <>
+          {totalContacts>0&&<div style={{color:"#8A9BB8",fontFamily:MONO,fontSize:10,marginBottom:2}}>{totalContacts.toLocaleString()} contactos</div>}
+          {lastSync&&<div style={{color:"#3A5070",fontFamily:MONO,fontSize:9,marginBottom:5}}>
+            {new Date(lastSync).toLocaleDateString("es-MX",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
+          </div>}
+          {syncError&&<div style={{color:"#E8824A",fontFamily:MONO,fontSize:9,marginBottom:5,lineHeight:1.3}}>{syncError}</div>}
+          <button
+            onClick={status==="syncing"?undefined:syncNow}
+            disabled={status==="syncing"||status==="checking"}
+            style={{width:"100%",background:status==="syncing"?"#1E3050":GOLD,color:status==="syncing"?"#5A7090":NAVY,border:"none",borderRadius:6,padding:"6px 8px",cursor:status==="syncing"||status==="checking"?"not-allowed":"pointer",fontFamily:MONO,fontSize:9,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:4,transition:"all 0.15s"}}
+          >
+            {status==="syncing"?"⏳ Descargando…":"🔄 Sincronizar GHL"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
-function ReportSidebar({reports,activeId,onSelect,onDelete,onNew}) {
+function ReportSidebar({reports,activeId,onSelect,onDelete,onNew,onGHLSync}) {
   return (
     <div style={{width:210,flexShrink:0,background:"#0A1420",borderRight:"1px solid #1E3050",display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0,overflowY:"auto"}}>
       <div style={{padding:"16px 14px",borderBottom:"1px solid #1E3050"}}><div style={{color:"#F0EAD6",fontFamily:SERIF,fontSize:14,fontWeight:700}}>TDL</div><div style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>REPORTES GUARDADOS</div></div>
@@ -1041,7 +1180,8 @@ function ReportSidebar({reports,activeId,onSelect,onDelete,onNew}) {
         ))}
       </div>
       <div style={{padding:"10px 6px",borderTop:"1px solid #1E3050"}}>
-        <button onClick={onNew} style={{width:"100%",background:`${GOLD}22`,border:`1px solid ${GOLD}44`,color:GOLD,borderRadius:10,padding:"9px",cursor:"pointer",fontFamily:MONO,fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",gap:5}} onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}33`} onMouseLeave={e=>e.currentTarget.style.background=`${GOLD}22`}>
+        {onGHLSync&&<GHLSyncPanel onReportReady={onGHLSync}/>}
+        <button onClick={onNew} style={{width:"100%",background:`${GOLD}22`,border:`1px solid ${GOLD}44`,color:GOLD,borderRadius:10,padding:"9px",cursor:"pointer",fontFamily:MONO,fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginTop:6}} onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}33`} onMouseLeave={e=>e.currentTarget.style.background=`${GOLD}22`}>
           <Plus size={12}/> Nuevo Reporte
         </button>
       </div>
@@ -1193,7 +1333,7 @@ export default function TDLApp() {
         ::-webkit-scrollbar-thumb{background:#1E3050;border-radius:3px;}
         input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.4);}
       `}</style>
-      <ReportSidebar reports={reports} activeId={activeReportId} onSelect={id=>{setActiveReportId(id);setShowComparativa(false);}} onDelete={deleteReport} onNew={()=>setShowModal(true)}/>
+      <ReportSidebar reports={reports} activeId={activeReportId} onSelect={id=>{setActiveReportId(id);setShowComparativa(false);}} onDelete={deleteReport} onNew={()=>setShowModal(true)} onGHLSync={r=>{saveReport(r);setShowComparativa(false);}}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
         {showComparativa
           ?<div style={{flex:1,overflowY:"auto",padding:24}}><button onClick={()=>setShowComparativa(false)} style={{background:`${GOLD}1A`,border:`1px solid ${GOLD}44`,color:GOLD,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontFamily:MONO,fontSize:11,display:"flex",alignItems:"center",gap:5,marginBottom:20}}><ArrowLeft size={12}/> Volver</button><ComparativaView reports={reports}/></div>
