@@ -23,9 +23,21 @@ const PORT = process.env.PORT || 3001;
 const DATA_DIR = path.join(__dirname, "data");
 const LATEST_FILE = path.join(DATA_DIR, "contacts-latest.json");
 
-// Permite requests desde el dashboard React (localhost:5173 o cualquier origen local)
+// Permite requests desde el dashboard React (local y Vercel)
 app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:4173", "http://127.0.0.1:5173"],
+  origin: (origin, callback) => {
+    // Permitir: localhost dev, Vercel producción, y cualquier subdominio de vercel.app
+    const allowed = [
+      /^http:\/\/localhost:/,
+      /^http:\/\/127\.0\.0\.1:/,
+      /\.vercel\.app$/,
+    ];
+    if (!origin || allowed.some(r => r.test(origin))) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS no permitido: " + origin));
+    }
+  },
   methods: ["GET", "POST"],
 }));
 app.use(express.json());
