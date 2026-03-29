@@ -266,4 +266,14 @@ export default async function handler(req, res) {
       ok:        true,
       synced:    true,
       contacts,
-      mensajes
+      mensajes,
+      llamadas,
+      total:         contacts.length,
+      totalMensajes: mensajes.length,
+      totalLlamadas: llamadas.length,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+}
