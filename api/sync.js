@@ -183,13 +183,22 @@ function normalizeContact(c, userMap, oppMap, cfMap = {}) {
     "Opportunities": pipeline && stage ? `${oppStatus}: ${pipeline} - ${stage}` : "",
     "Días Asignado": created ? Math.floor((Date.now() - new Date(typeof created === "number" ? (created > 1e10 ? created : created * 1000) : created).getTime()) / 86400000) : "",
     "Last Note":     c.lastNote || "",
-    // Custom fields con nombres del CSV
-    "🌡️ Nivel de interés del prospecto":        custom["nivel_de_interes_del_prospecto"] || custom["nivel_interes"] || "",
-    "💸 Presupuesto estimado":                  custom["presupuesto_estimado"] || custom["presupuesto"] || "",
-    "🏦 ¿Cuenta con financiamiento o crédito?": custom["cuenta_con_financiamiento_o_credito"] || custom["financiamiento"] || "",
+    // ── Campos de encuesta — Unique Keys reales de GHL ──────────────────────
+    // Encuesta de primer contacto
+    "🌡️ Nivel de interés del prospecto":        custom["_nivel_de_interes_del_prospecto"] || custom["nivel_de_interes_del_prospecto"] || "",
+    "💸 Presupuesto estimado":                  custom["_presupuesto_estimado"] || custom["presupuesto_estimado"] || "",
+    "🏦 ¿Cuenta con financiamiento o crédito?": custom["_cuenta_con_financiamiento_o_credito"] || custom["cuenta_con_financiamiento_o_credito"] || "",
+    "📅 ¿Desea agendar una cita?":              custom["_desea_agendar_una_cita"] || custom["desea_agendar_una_cita"] || "",
+    "Comentario de NOTA primer contacto":       custom["comentario_de_nota_seguimiento_frio_"] || custom["comentario_de_nota_primer_contacto"] || "",
+    "Medio de contacto de preferencia":         custom["medio_de_contacto_de_preferencia"] || "",
+    "Requiero más tiempo para responder":       custom["requiero_mas_tiempo_para_responder"] || "",
+    "Funciones de LEAD":                        custom["funciones_de_lead"] || "",
+    // Seguimiento externo
+    "Comentario de seguimiento externo":        custom["comentario_de_seguimiento_externo"] || "",
+    "📷 Capturas de pantalla (seguimiento)":    custom["capturas_de_pantalla_seguimiento_externo"] || "",
+    // Otros campos personalizados
     "¿Dónde te gustaria invertir?":             custom["donde_te_gustaria_invertir"] || custom["donde_invertir"] || "",
     "¿En que te gustaria invertir?":            custom["en_que_te_gustaria_invertir"] || custom["en_que_invertir"] || "",
-    "Comentario de NOTA primer contacto":       custom["comentario_de_nota_primer_contacto"] || "",
     "Historial de NOTAS para clientes":         custom["historial_de_notas_para_clientes"] || "",
     "Turno de asignación":                      custom["turno_de_asignacion"] || "",
     "Propiedad seleccionada":                   custom["propiedad_seleccionada"] || custom["propiedad"] || "",

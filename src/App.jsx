@@ -320,9 +320,12 @@ function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[], llamadas
         "🌡️ Nivel de interés del prospecto":        c["🌡️ Nivel de interés del prospecto"] || "",
         "💸 Presupuesto estimado":                  c["💸 Presupuesto estimado"] || "",
         "🏦 ¿Cuenta con financiamiento o crédito?": c["🏦 ¿Cuenta con financiamiento o crédito?"] || "",
+        "📅 ¿Desea agendar una cita?":              c["📅 ¿Desea agendar una cita?"] || "",
         "Comentario de NOTA primer contacto":       c["Comentario de NOTA primer contacto"] || "",
-        "Comentario NOTA Cierre comercial":         c["Comentario NOTA Cierre comercial"] || "",
         "Comentario de seguimiento externo":        c["Comentario de seguimiento externo"] || "",
+        "Medio de contacto de preferencia":         c["Medio de contacto de preferencia"] || "",
+        "Funciones de LEAD":                        c["Funciones de LEAD"] || "",
+        "Requiero más tiempo para responder":       c["Requiero más tiempo para responder"] || "",
         "¿Dónde te gustaria invertir?":             c["¿Dónde te gustaria invertir?"] || "",
         "Propiedad seleccionada":                   c["Propiedad seleccionada"] || "",
         "{{contact.suma_de_notas_de_agente}}": c["{{contact.suma_de_notas_de_agente}}"] || "0",
@@ -606,6 +609,7 @@ function AsesorSearch({ agents, leads, llamadas, mensajes }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [showDrop, setShowDrop] = useState(false);
+  const [expandedLead, setExpandedLead] = useState(null);
   const filtered = query.length>=1 ? agents.filter(a=>a.name.toLowerCase().includes(query.toLowerCase())) : [];
   const selAgent = agents.find(a=>a.name===selected);
   const agentLeads = useMemo(()=>{
@@ -624,6 +628,10 @@ function AsesorSearch({ agents, leads, llamadas, mensajes }) {
       interes:     lead["🌡️ Nivel de interés del prospecto"] || "",
       presupuesto: lead["💸 Presupuesto estimado"] || "",
       financ:      lead["🏦 ¿Cuenta con financiamiento o crédito?"] || "",
+      cita:        lead["📅 ¿Desea agendar una cita?"] || "",
+      medio:       lead["Medio de contacto de preferencia"] || "",
+      notaPrimerC: lead["Comentario de NOTA primer contacto"] || "",
+      notaSeguim:  lead["Comentario de seguimiento externo"] || "",
       dias:        lead["Días Asignado"] !== "" && lead["Días Asignado"] !== undefined ? String(lead["Días Asignado"]) : "",
       contactId:   lead["Contact Id"] || "",
     };
@@ -686,19 +694,41 @@ function AsesorSearch({ agents, leads, llamadas, mensajes }) {
                     const pc=PIPELINE_CONFIG[lead.pipeline]||{color:GOLD};
                     const diasNum=parseInt(lead.dias)||0;
                     const diasColor=diasNum>14?"#E8824A":diasNum>7?"#C8A84A":"#6DB87A";
-                    return <tr key={i} style={{borderBottom:"1px solid #0D1B2A"}} onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}0A`} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                      <td style={{padding:"10px 14px",color:"#F0EAD6",fontWeight:600,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.contactName||"—"}</td>
-                      <td style={{padding:"10px 14px"}}><span style={{color:pc.color,background:`${pc.color}18`,borderRadius:6,padding:"3px 8px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{lead.pipeline||"—"}</span></td>
-                      <td style={{padding:"10px 14px",color:"#A8C0D8",fontSize:10,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.stage||"—"}</td>
-                      <td style={{padding:"10px 14px",color:"#F0EAD6",fontSize:9,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.interes||"—"}</td>
-                      <td style={{padding:"10px 14px",color:"#6DB87A",fontSize:10,whiteSpace:"nowrap"}}>{lead.presupuesto||"—"}</td>
-                      <td style={{padding:"10px 14px",color:lead.financ&&lead.financ.toLowerCase().includes("sí")?"#6DB87A":"#A8C0D8",fontSize:10,whiteSpace:"nowrap"}}>{lead.financ||"—"}</td>
-                      <td style={{padding:"10px 14px",textAlign:"center",color:lead.callCount>0?GOLD:"#3A5070",fontWeight:lead.callCount>0?700:400}}>{lead.callCount||"—"}</td>
-                      <td style={{padding:"10px 14px",textAlign:"center",color:lead.msgCount>0?"#4A7FA5":"#3A5070",fontWeight:lead.msgCount>0?700:400}}>{lead.msgCount||"—"}</td>
-                      <td style={{padding:"10px 14px",textAlign:"center",color:parseInt(lead.notes)>0?"#B87CC8":"#3A5070",fontWeight:parseInt(lead.notes)>0?700:400}}>{lead.notes}</td>
-                      <td style={{padding:"10px 14px",textAlign:"center",color:lead.actividades>0?"#6DB87A":"#3A5070",fontWeight:lead.actividades>0?700:400,fontSize:13}}>{lead.actividades||"—"}</td>
-                      <td style={{padding:"10px 14px",textAlign:"center",color:lead.dias?diasColor:"#3A5070",fontWeight:700,fontSize:10}}>{lead.dias||"—"}</td>
-                    </tr>;
+                    const isExp=expandedLead===i;
+                    const hasNotes=lead.notaPrimerC||lead.notaSeguim||lead.cita||lead.medio;
+                    return <>
+                      <tr key={i} onClick={()=>setExpandedLead(isExp?null:i)} style={{borderBottom:isExp?"none":"1px solid #0D1B2A",cursor:hasNotes?"pointer":"default",background:isExp?`${GOLD}0D`:"transparent"}} onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}0A`} onMouseLeave={e=>e.currentTarget.style.background=isExp?`${GOLD}0D`:"transparent"}>
+                        <td style={{padding:"10px 14px",color:"#F0EAD6",fontWeight:600,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hasNotes?<span style={{marginRight:4,fontSize:9}}>{isExp?"▼":"▶"}</span>:null}{lead.contactName||"—"}</td>
+                        <td style={{padding:"10px 14px"}}><span style={{color:pc.color,background:`${pc.color}18`,borderRadius:6,padding:"3px 8px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{lead.pipeline||"—"}</span></td>
+                        <td style={{padding:"10px 14px",color:"#A8C0D8",fontSize:10,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.stage||"—"}</td>
+                        <td style={{padding:"10px 14px",color:"#F0EAD6",fontSize:9,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.interes||"—"}</td>
+                        <td style={{padding:"10px 14px",color:"#6DB87A",fontSize:10,whiteSpace:"nowrap"}}>{lead.presupuesto||"—"}</td>
+                        <td style={{padding:"10px 14px",color:lead.financ&&lead.financ.toLowerCase().includes("sí")?"#6DB87A":"#A8C0D8",fontSize:10,whiteSpace:"nowrap"}}>{lead.financ||"—"}</td>
+                        <td style={{padding:"10px 14px",textAlign:"center",color:lead.callCount>0?GOLD:"#3A5070",fontWeight:lead.callCount>0?700:400}}>{lead.callCount||"—"}</td>
+                        <td style={{padding:"10px 14px",textAlign:"center",color:lead.msgCount>0?"#4A7FA5":"#3A5070",fontWeight:lead.msgCount>0?700:400}}>{lead.msgCount||"—"}</td>
+                        <td style={{padding:"10px 14px",textAlign:"center",color:parseInt(lead.notes)>0?"#B87CC8":"#3A5070",fontWeight:parseInt(lead.notes)>0?700:400}}>{lead.notes}</td>
+                        <td style={{padding:"10px 14px",textAlign:"center",color:lead.actividades>0?"#6DB87A":"#3A5070",fontWeight:lead.actividades>0?700:400,fontSize:13}}>{lead.actividades||"—"}</td>
+                        <td style={{padding:"10px 14px",textAlign:"center",color:lead.dias?diasColor:"#3A5070",fontWeight:700,fontSize:10}}>{lead.dias?`${lead.dias}d`:"—"}</td>
+                      </tr>
+                      {isExp&&<tr key={`exp-${i}`} style={{borderBottom:"1px solid #0D1B2A",background:"#070D14"}}>
+                        <td colSpan={11} style={{padding:"12px 20px"}}>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                            {lead.notaPrimerC&&<div style={{background:"#0A1420",borderRadius:8,padding:"10px 14px",border:"1px solid #1E3050"}}>
+                              <div style={{color:GOLD,fontFamily:MONO,fontSize:9,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>📝 Nota primer contacto</div>
+                              <div style={{color:"#A8C0D8",fontFamily:MONO,fontSize:10,lineHeight:1.5}}>{lead.notaPrimerC}</div>
+                            </div>}
+                            {lead.notaSeguim&&<div style={{background:"#0A1420",borderRadius:8,padding:"10px 14px",border:"1px solid #1E3050"}}>
+                              <div style={{color:"#4A7FA5",fontFamily:MONO,fontSize:9,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>💬 Seguimiento externo</div>
+                              <div style={{color:"#A8C0D8",fontFamily:MONO,fontSize:10,lineHeight:1.5}}>{lead.notaSeguim}</div>
+                            </div>}
+                            {(lead.cita||lead.medio)&&<div style={{background:"#0A1420",borderRadius:8,padding:"10px 14px",border:"1px solid #1E3050"}}>
+                              {lead.cita&&<div style={{marginBottom:6}}><span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>¿Desea cita? </span><span style={{color:"#F0EAD6",fontFamily:MONO,fontSize:10,fontWeight:600}}>{lead.cita}</span></div>}
+                              {lead.medio&&<div><span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>Medio preferido: </span><span style={{color:"#F0EAD6",fontFamily:MONO,fontSize:10,fontWeight:600}}>{lead.medio}</span></div>}
+                            </div>}
+                          </div>
+                        </td>
+                      </tr>}
+                    </>;
                   })}</tbody>
                 </table>
               </div>
