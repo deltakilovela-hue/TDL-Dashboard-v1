@@ -314,8 +314,17 @@ function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[], llamadas
         "Source": c["Source"] || "",
         "Created On": c["Created On"] || c["Created"] || "",
         "Tags": c["Tags"] || "",
-        "🌡️ Nivel de interés del prospecto": c["🌡️ Nivel de interés del prospecto"] || "",
-        "💸 Presupuesto estimado": c["💸 Presupuesto estimado"] || "",
+        "Contact Id":       c["Contact Id"] || "",
+        "Días Asignado":    c["Días Asignado"] || "",
+        "Last Activity":    c["Last Activity"] || c["Updated"] || "",
+        "🌡️ Nivel de interés del prospecto":        c["🌡️ Nivel de interés del prospecto"] || "",
+        "💸 Presupuesto estimado":                  c["💸 Presupuesto estimado"] || "",
+        "🏦 ¿Cuenta con financiamiento o crédito?": c["🏦 ¿Cuenta con financiamiento o crédito?"] || "",
+        "Comentario de NOTA primer contacto":       c["Comentario de NOTA primer contacto"] || "",
+        "Comentario NOTA Cierre comercial":         c["Comentario NOTA Cierre comercial"] || "",
+        "Comentario de seguimiento externo":        c["Comentario de seguimiento externo"] || "",
+        "¿Dónde te gustaria invertir?":             c["¿Dónde te gustaria invertir?"] || "",
+        "Propiedad seleccionada":                   c["Propiedad seleccionada"] || "",
         "{{contact.suma_de_notas_de_agente}}": c["{{contact.suma_de_notas_de_agente}}"] || "0",
       };
     });
@@ -609,7 +618,15 @@ function AsesorSearch({ agents, leads, llamadas, mensajes }) {
       const fw=(contactName.split(" ")[0]||"").toLowerCase();
       const callCount=fw.length>2?llamadas.filter(r=>(r["Nombre del Contacto"]||"").toLowerCase().includes(fw)).length:0;
       const msgCount=fw.length>2?mensajes.filter(r=>(r["Nombre del Contacto"]||"").toLowerCase().includes(fw)).length:0;
-      return {contactName,stage,pipeline,notes,callCount,msgCount,actividades:callCount+msgCount+(parseInt(notes)||0)};
+      return {
+      contactName, stage, pipeline, notes, callCount, msgCount,
+      actividades: callCount+msgCount+(parseInt(notes)||0),
+      interes:     lead["🌡️ Nivel de interés del prospecto"] || "",
+      presupuesto: lead["💸 Presupuesto estimado"] || "",
+      financ:      lead["🏦 ¿Cuenta con financiamiento o crédito?"] || "",
+      dias:        lead["Días Asignado"] !== "" && lead["Días Asignado"] !== undefined ? String(lead["Días Asignado"]) : "",
+      contactId:   lead["Contact Id"] || "",
+    };
     });
   },[selected,leads,llamadas,mensajes]);
   const pipeCounts = useMemo(()=>{ const c={}; agentLeads.forEach(l=>{c[l.pipeline]=(c[l.pipeline]||0)+1;}); return c; },[agentLeads]);
@@ -664,17 +681,23 @@ function AsesorSearch({ agents, leads, llamadas, mensajes }) {
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontFamily:MONO,fontSize:11}}>
-                  <thead><tr style={{background:"#0D1B2A"}}>{["Prospecto","Pipeline","Etapa","📞","💬","📝 Notas","Total Act."].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",color:"#5A7090",fontSize:9,fontWeight:500,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                  <thead><tr style={{background:"#0D1B2A"}}>{["Prospecto","Pipeline","Etapa","🌡️ Interés","💸 Presupuesto","🏦 Financ.","📞","💬","📝","Actos","Días"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",color:"#5A7090",fontSize:9,fontWeight:500,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
                   <tbody>{agentLeads.map((lead,i)=>{
                     const pc=PIPELINE_CONFIG[lead.pipeline]||{color:GOLD};
+                    const diasNum=parseInt(lead.dias)||0;
+                    const diasColor=diasNum>14?"#E8824A":diasNum>7?"#C8A84A":"#6DB87A";
                     return <tr key={i} style={{borderBottom:"1px solid #0D1B2A"}} onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}0A`} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                      <td style={{padding:"10px 14px",color:"#F0EAD6",fontWeight:600,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.contactName||"—"}</td>
-                      <td style={{padding:"10px 14px"}}><span style={{color:pc.color,background:`${pc.color}18`,borderRadius:6,padding:"3px 8px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{lead.pipeline}</span></td>
-                      <td style={{padding:"10px 14px",color:"#A8C0D8",fontSize:10,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.stage||"—"}</td>
+                      <td style={{padding:"10px 14px",color:"#F0EAD6",fontWeight:600,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.contactName||"—"}</td>
+                      <td style={{padding:"10px 14px"}}><span style={{color:pc.color,background:`${pc.color}18`,borderRadius:6,padding:"3px 8px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{lead.pipeline||"—"}</span></td>
+                      <td style={{padding:"10px 14px",color:"#A8C0D8",fontSize:10,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.stage||"—"}</td>
+                      <td style={{padding:"10px 14px",color:"#F0EAD6",fontSize:9,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lead.interes||"—"}</td>
+                      <td style={{padding:"10px 14px",color:"#6DB87A",fontSize:10,whiteSpace:"nowrap"}}>{lead.presupuesto||"—"}</td>
+                      <td style={{padding:"10px 14px",color:lead.financ&&lead.financ.toLowerCase().includes("sí")?"#6DB87A":"#A8C0D8",fontSize:10,whiteSpace:"nowrap"}}>{lead.financ||"—"}</td>
                       <td style={{padding:"10px 14px",textAlign:"center",color:lead.callCount>0?GOLD:"#3A5070",fontWeight:lead.callCount>0?700:400}}>{lead.callCount||"—"}</td>
                       <td style={{padding:"10px 14px",textAlign:"center",color:lead.msgCount>0?"#4A7FA5":"#3A5070",fontWeight:lead.msgCount>0?700:400}}>{lead.msgCount||"—"}</td>
                       <td style={{padding:"10px 14px",textAlign:"center",color:parseInt(lead.notes)>0?"#B87CC8":"#3A5070",fontWeight:parseInt(lead.notes)>0?700:400}}>{lead.notes}</td>
                       <td style={{padding:"10px 14px",textAlign:"center",color:lead.actividades>0?"#6DB87A":"#3A5070",fontWeight:lead.actividades>0?700:400,fontSize:13}}>{lead.actividades||"—"}</td>
+                      <td style={{padding:"10px 14px",textAlign:"center",color:lead.dias?diasColor:"#3A5070",fontWeight:700,fontSize:10}}>{lead.dias||"—"}</td>
                     </tr>;
                   })}</tbody>
                 </table>
@@ -1370,7 +1393,6 @@ function ReportDashboard({report,prevReport}) {
     {id:"mensajes",label:"💬 Mensajes"},
     {id:"contactos",label:"👤 Contactos"},
     {id:"leads",label:"🚨 LEADS"},
-    {id:"presupuestos",label:"💰 Presupuestos"},
   ];
 
   const {llamadas=[],mensajes=[],contactos=[],leads=[],presupuestos=[]}=filteredDatasets||{};
@@ -1382,7 +1404,7 @@ function ReportDashboard({report,prevReport}) {
   const contactosPorAgente=hasRaw?Object.entries(contactos.reduce((acc,r)=>{const a=r["Usuario asignado"]||"N/A";acc[a]=(acc[a]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value):charts.contactosAsignados||[];
   const leadsPorStage=hasRaw?Object.entries(leads.reduce((acc,r)=>{const s=r["Stage"]||"N/A";acc[s]=(acc[s]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value):[];
   const leadsPorAgente=hasRaw?Object.entries(leads.reduce((acc,r)=>{const a=r["Assigned User"]||"N/A";acc[a]=(acc[a]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value):[];
-  const interesDist=hasRaw?Object.entries(presupuestos.reduce((acc,r)=>{const n=(r["Nivel_interes"]||"Sin nivel").replace(/[^\w\sáéíóúÁÉÍÓÚñÑ–]/g,"").trim()||"Sin nivel";acc[n]=(acc[n]||0)+1;return acc;},{})).map(([name,value])=>({name,value})):charts.interesDist||[];
+  const interesDist=hasRaw?Object.entries(contactos.reduce((acc,r)=>{const n=r["🌡️ Nivel de interés del prospecto"]||"";if(n)acc[n]=(acc[n]||0)+1;return acc;},{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value):charts.interesDist||[];
   const selAgent=filteredAgentScores?.find(a=>a.name===selectedAgent);
   const selRank=(filteredAgentScores?.findIndex(a=>a.name===selectedAgent)||0)+1;
 
@@ -1429,8 +1451,8 @@ function ReportDashboard({report,prevReport}) {
           {activeTab==="semanas"&&<WeeklyView report={{...report,datasets:filteredDatasets}}/>}
           {activeTab==="llamadas"&&<><SectionTitle>📞 Llamadas Salientes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={llamadasPorAgente} dataKey="value" nameKey="name" color={GOLD}/><PiePanel title="Estado" data={estadoLlamadas}/></div>{llamadas.length>0&&<DataTable title="Detalle" rows={llamadas} cols={["Nombre del Contacto","Llamar realizada Vía","Duración (in segundos)","Estado de la llamada"]}/>}</>}
           {activeTab==="mensajes"&&<><SectionTitle>💬 Mensajes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={mensajesPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>{canalDist.length>0&&<PiePanel title="Canal" data={canalDist}/>}</div>{mensajes.length>0&&<DataTable title="Detalle" rows={mensajes} cols={["Nombre del Contacto","Mensajes no leídos","Asignado a","Tipo","Canal del último Mensaje"]}/>}</>}
-          {activeTab==="contactos"&&<><SectionTitle>👤 Contactos</SectionTitle><div style={{marginBottom:12}}><ChartPanel title="Por Agente" data={contactosPorAgente} dataKey="value" nameKey="name" color={GOLD}/></div>{contactos.length>0&&<DataTable title="Detalle" rows={contactos} cols={["Nombre del Contacto","Número de teléfono","Usuario asignado","Opportunities","Días Asignado"]}/>}</>}
-          {activeTab==="leads"&&<><SectionTitle>🚨 LEADS</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{leadsPorStage.length>0&&<ChartPanel title="Por Etapa" data={leadsPorStage} dataKey="value" nameKey="name" color="#E8824A"/>}{leadsPorAgente.length>0&&<ChartPanel title="Por Agente" data={leadsPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>}</div>{leads.length>0&&<DataTable title="Detalle" rows={leads} cols={["Primary Contact Name","Assigned User","Pipeline Name","Stage","Source","Created On"]}/>}</>}
+          {activeTab==="contactos"&&<><SectionTitle>👤 Contactos</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={contactosPorAgente} dataKey="value" nameKey="name" color={GOLD}/>{interesDist.length>0&&<PiePanel title="🌡️ Nivel de Interés" data={interesDist}/>}</div>{contactos.length>0&&<DataTable title="Detalle" rows={contactos} cols={["Nombre del Contacto","Usuario asignado","Opportunities","🌡️ Nivel de interés del prospecto","💸 Presupuesto estimado","🏦 ¿Cuenta con financiamiento o crédito?","Días Asignado"]}/>}</>}
+          {activeTab==="leads"&&<><SectionTitle>🚨 LEADS</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{leadsPorStage.length>0&&<ChartPanel title="Por Etapa" data={leadsPorStage} dataKey="value" nameKey="name" color="#E8824A"/>}{leadsPorAgente.length>0&&<ChartPanel title="Por Agente" data={leadsPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>}</div>{leads.length>0&&<DataTable title="Detalle" rows={leads} cols={["Primary Contact Name","Assigned User","Pipeline Name","Stage","🌡️ Nivel de interés del prospecto","💸 Presupuesto estimado","🏦 ¿Cuenta con financiamiento o crédito?","Días Asignado","Source"]}/>}</>}
           {activeTab==="presupuestos"&&<><SectionTitle>💰 Presupuestos</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{interesDist.length>0&&<PiePanel title="Nivel de Interés" data={interesDist}/>}{charts.contactosPorMedio&&<PiePanel title="Por Medio" data={charts.contactosPorMedio}/>}</div>{presupuestos.length>0&&<DataTable title="Detalle" rows={presupuestos} cols={["identificador_presupuesto","Presupuesto","Nivel_interes","Owner","Created On"]}/>}</>}
         </>}
       </div>

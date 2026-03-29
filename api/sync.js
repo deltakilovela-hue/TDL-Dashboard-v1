@@ -82,6 +82,28 @@ async function fetchOpportunityMap(locationId) {
   return map;
 }
 
+// ── Fetch custom field definitions → { id|fieldKey: displayName } ────────────
+// Permite mapear campos personalizados de GHL por su nombre visible real
+async function fetchCustomFieldMap(locationId) {
+  try {
+    const data = await ghlGet(`/locations/${locationId}/customFields`);
+    const map = {};
+    (data.customFields || []).forEach(f => {
+      const name = f.name || "";
+      if (!name) return;
+      if (f.id)       map[f.id] = name;
+      if (f.fieldKey) {
+        map[f.fieldKey] = name;
+        map[f.fieldKey.replace(/^contact\./, "")] = name;
+      }
+    });
+    return map;
+  } catch (e) {
+    console.warn("⚠️ fetchCustomFieldMap:", e.message);
+    return {};
+  }
+}
+
 // ── Fetch contacts (paginado) ─────────────────────────────────────────────────
 async function fetchContacts(locationId) {
   const all = [];
@@ -116,14 +138,20 @@ async function fetchConversations(locationId) {
 }
 
 // ── Normaliza contacto con nombres de columna del CSV de GHL ─────────────────
-function normalizeContact(c, userMap, oppMap) {
+function normalizeContact(c, userMap, oppMap, cfMap = {}) {
   const custom = {};
   (c.customField || []).forEach((f) => {
-    if (f.id) custom[f.id] = f.value;
+    const val = f.value ?? "";
+    // Guardar por ID y fieldKey (para backward compat)
+    if (f.id)       custom[f.id] = val;
     if (f.fieldKey) {
-      custom[f.fieldKey] = f.value;
-      custom[f.fieldKey.replace(/^contact\./, "")] = f.value;
+      custom[f.fieldKey] = val;
+      custom[f.fieldKey.replace(/^contact\./, "")] = val;
     }
+    // Guardar por nombre visible usando cfMap (fuente de verdad de GHL)
+    const displayName = (f.id && cfMap[f.id]) || (f.fieldKey && cfMap[f.fieldKey]) ||
+                        (f.fieldKey && cfMap[f.fieldKey.replace(/^contact\./, "")]) || "";
+    if (displayName) custom[displayName] = val;
   });
 
   const fullName = c.contactName || `${c.firstName || ""} ${c.lastName || ""}`.trim();
@@ -279,15 +307,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Descarga en paralelo: contactos, conversaciones, usuarios y oportunidades
-    const [rawContacts, rawConversations, userMap, oppMap] = await Promise.all([
+    // Descarga en paralelo: contactos, conversaciones, usuarios, oportunidades y campos personalizados
+    const [rawContacts, rawConversations, userMap, oppMap, cfMap] = await Promise.all([
       fetchContacts(LOCATION_ID),
       fetchConversations(LOCATION_ID).catch(() => []),
       fetchUserMap(LOCATION_ID).catch(() => ({})),
       fetchOpportunityMap(LOCATION_ID).catch(() => ({})),
+      fetchCustomFieldMap(LOCATION_ID).catch(() => ({})),
     ]);
 
-    const contacts = rawContacts.map((c) => normalizeContact(c, userMap, oppMap));
+    const contacts = rawContacts.map((c) => normalizeContact(c, userMap, oppMap, cfMap));
 
     // Separar conversaciones de tipo llamada vs mensajes
     const callConvs = rawConversations.filter(c => isCallConversation(c));
