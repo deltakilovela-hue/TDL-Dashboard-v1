@@ -38,6 +38,11 @@ function detectFileType(headers) {
 // Parse any date string found in CSVs: "Mar 08 2026 03:01 AM", "Mar 09 2026", "07 Mar 26"
 function parseDate(str) {
   if (!str || str === "N/A" || str === "") return null;
+  // GHL API puede devolver timestamps numéricos — convertir a string
+  if (typeof str !== "string") {
+    if (typeof str === "number") return new Date(str > 1e10 ? str : str * 1000);
+    str = String(str);
+  }
   const s = str.trim();
   // "Mar 08 2026 03:01 AM" or "Mar 09 2026"
   let m = s.match(/([A-Za-z]{3})\s+(\d{1,2})\s+(\d{2,4})/);
@@ -192,7 +197,7 @@ function buildAgentScores(datasets) {
   const agents = {};
   const get = name => {
     if (!name||name==="N/A"||name==="") return null;
-    const k=name.trim();
+    const k=typeof name==="string"?name.trim():String(name);
     if (!agents[k]) agents[k]={name:k,llamadasTotal:0,llamadasContestadas:0,llamadasPerdidas:0,duracionTotal:0,mensajesTotal:0,mensajesUnread:0,mensajesInbound:0,contactosTotal:0,leadsAbandonados:0};
     return agents[k];
   };
@@ -1430,17 +1435,4 @@ export default function TDLApp() {
         *{box-sizing:border-box;}
         ::-webkit-scrollbar{width:5px;height:5px;background:#070D14;}
         ::-webkit-scrollbar-thumb{background:#1E3050;border-radius:3px;}
-        input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.4);}
-      `}</style>
-      <ReportSidebar reports={reports} activeId={activeReportId} onSelect={id=>{setActiveReportId(id);setShowComparativa(false);}} onDelete={deleteReport} onNew={()=>setShowModal(true)} onGHLSync={r=>{saveReport(r);setShowComparativa(false);}}/>
-      <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
-        {showComparativa
-          ?<div style={{flex:1,overflowY:"auto",padding:24}}><button onClick={()=>setShowComparativa(false)} style={{background:`${GOLD}1A`,border:`1px solid ${GOLD}44`,color:GOLD,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontFamily:MONO,fontSize:11,display:"flex",alignItems:"center",gap:5,marginBottom:20}}><ArrowLeft size={12}/> Volver</button><ComparativaView reports={reports}/></div>
-          :activeReport&&<ReportDashboard report={activeReport} prevReport={prevReport}/>
-        }
-      </div>
-      {reports.length>=2&&!showComparativa&&<button onClick={()=>setShowComparativa(true)} style={{position:"fixed",bottom:24,right:24,background:GOLD,color:NAVY,border:"none",borderRadius:50,padding:"12px 18px",cursor:"pointer",fontFamily:MONO,fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:7,boxShadow:`0 4px 20px ${GOLD}55`,zIndex:90}}><BarChart2 size={14}/> Comparar reportes</button>}
-      {showModal&&<NewReportModal onSave={saveReport} onClose={()=>setShowModal(false)}/>}
-    </div>
-  );
-}
+        input[type=date]::-webkit-calendar-pi

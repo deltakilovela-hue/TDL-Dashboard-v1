@@ -144,9 +144,4 @@ app.listen(PORT, () => {
   if (fs.existsSync(LATEST_FILE)) {
     try {
       const data = JSON.parse(fs.readFileSync(LATEST_FILE, "utf8"));
-      console.log(`📊 Datos disponibles: ${data.total} contactos (última sync: ${data.updatedAt})`);
-    } catch {}
-  } else {
-    console.log("⚠️  No hay datos aún. Llama a /api/sync para descargar contactos.");
-  }
-});
+      console.log(`📊 Datos disponibles: ${data.total} contactos (última sync: $

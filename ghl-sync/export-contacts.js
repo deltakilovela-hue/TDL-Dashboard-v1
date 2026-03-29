@@ -387,14 +387,4 @@ async function main() {
   fs.writeFileSync(latestPath, JSON.stringify(payload, null, 2));
 
   // Backup con fecha
-  const backupPath = path.join(OUTPUT_DIR, `contacts-${today}.json`);
-  fs.writeFileSync(backupPath, JSON.stringify(payload, null, 2));
-
-  console.log(`\n✅ Sincronización completa:`);
-  console.log(`   👥 ${contacts.length} contactos`);
-  console.log(`   💬 ${mensajes.length} mensajes`);
-  console.log(`   📞 ${llamadas.length} llamadas`);
-  console.log(`   📄 ${latestPath}`);
-}
-
-main();
+  const back
