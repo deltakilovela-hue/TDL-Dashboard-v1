@@ -183,8 +183,7 @@ function normalizeContact(c, userMap, oppMap, cfMap = {}) {
     "Opportunities": pipeline && stage ? `${oppStatus}: ${pipeline} - ${stage}` : "",
     "Días Asignado": created ? Math.floor((Date.now() - new Date(typeof created === "number" ? (created > 1e10 ? created : created * 1000) : created).getTime()) / 86400000) : "",
     "Last Note":     c.lastNote || "",
-    // ── Campos de encuesta — Unique Keys reales de GHL ──────────────────────
-    // Encuesta de primer contacto
+    // ── Encuesta de Primer Contacto ──────────────────────────────────────────
     "🌡️ Nivel de interés del prospecto":        custom["_nivel_de_interes_del_prospecto"] || custom["nivel_de_interes_del_prospecto"] || "",
     "💸 Presupuesto estimado":                  custom["_presupuesto_estimado"] || custom["presupuesto_estimado"] || "",
     "🏦 ¿Cuenta con financiamiento o crédito?": custom["_cuenta_con_financiamiento_o_credito"] || custom["cuenta_con_financiamiento_o_credito"] || "",
@@ -193,15 +192,31 @@ function normalizeContact(c, userMap, oppMap, cfMap = {}) {
     "Medio de contacto de preferencia":         custom["medio_de_contacto_de_preferencia"] || "",
     "Requiero más tiempo para responder":       custom["requiero_mas_tiempo_para_responder"] || "",
     "Funciones de LEAD":                        custom["funciones_de_lead"] || "",
-    // Seguimiento externo
+    // ── Seguimiento Externo ───────────────────────────────────────────────────
     "Comentario de seguimiento externo":        custom["comentario_de_seguimiento_externo"] || "",
     "📷 Capturas de pantalla (seguimiento)":    custom["capturas_de_pantalla_seguimiento_externo"] || "",
-    // Otros campos personalizados
+    // ── Encuesta de Cierre Comercial ──────────────────────────────────────────
+    "Comentario NOTA Cierre Comercial":         custom["comentario_nota_cita_por_confirmar"] || "",
+    "¿El prospecto se presentó a la cita?":     custom["_el_prospecto_se_presento_a_la_cita"] || "",
+    "📊 Nivel de interés después de la cita":   custom["_nivel_de_interes_despues_de_la_cita"] || "",
+    "🍷 Tipo de cita":                          custom["_tipo_de_cita"] || "",
+    "¿Qué le hace falta para cerrar?":          custom["_que_le_hace_falta_para_cerrar_la_operacion"] || "",
+    "¿Requiere closer u otro equipo?":          custom["_requiere_intervencion_de_un_closer_u_otro_equipo"] || "",
+    "📅 Fecha tentativa seguimiento/cierre":    custom["_fecha_tentativa_de_seguimientocierre"] || "",
+    "Necesito más tiempo con el prospecto":     custom["necesito_mas_tiempo_con_el_prospecto"] || "",
+    "Descartado":                               custom["descartado_"] || "",
+    // ── Rentas Vacacionales Formulario ────────────────────────────────────────
+    "Agente de rentas":                         custom["agente_de_rentas"] || "",
+    "¿Necesitas algo especial?":                custom["necesidad_especial_rentasvacionales"] || "",
+    "Número de personas (total)":               custom["numero_de_personas_total_rentasvacionales"] || custom["numero_de_personas_total"] || "",
+    "¿Cuántos días estarás con nosotros?":      custom["numero_dias_estadia_rentasvacionales"] || "",
+    "Fecha de visita (rentas)":                 custom["fecha_de_visita_rentasvacionales"] || "",
+    "Propiedad seleccionada":                   custom["propiedad_seleccionada"] || custom["propiedad"] || "",
+    // ── Otros campos personalizados ───────────────────────────────────────────
     "¿Dónde te gustaria invertir?":             custom["donde_te_gustaria_invertir"] || custom["donde_invertir"] || "",
     "¿En que te gustaria invertir?":            custom["en_que_te_gustaria_invertir"] || custom["en_que_invertir"] || "",
     "Historial de NOTAS para clientes":         custom["historial_de_notas_para_clientes"] || "",
     "Turno de asignación":                      custom["turno_de_asignacion"] || "",
-    "Propiedad seleccionada":                   custom["propiedad_seleccionada"] || custom["propiedad"] || "",
     "Fecha de visita":                          custom["fecha_de_visita"] || "",
     // Columnas compatibles con el dashboard
     "Nombre del Contacto": fullName,

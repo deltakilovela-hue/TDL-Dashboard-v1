@@ -326,8 +326,22 @@ function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[], llamadas
         "Medio de contacto de preferencia":         c["Medio de contacto de preferencia"] || "",
         "Funciones de LEAD":                        c["Funciones de LEAD"] || "",
         "Requiero más tiempo para responder":       c["Requiero más tiempo para responder"] || "",
-        "¿Dónde te gustaria invertir?":             c["¿Dónde te gustaria invertir?"] || "",
+        // Cierre Comercial
+        "Comentario NOTA Cierre Comercial":         c["Comentario NOTA Cierre Comercial"] || "",
+        "¿El prospecto se presentó a la cita?":     c["¿El prospecto se presentó a la cita?"] || "",
+        "📊 Nivel de interés después de la cita":   c["📊 Nivel de interés después de la cita"] || "",
+        "¿Qué le hace falta para cerrar?":          c["¿Qué le hace falta para cerrar?"] || "",
+        "¿Requiere closer u otro equipo?":          c["¿Requiere closer u otro equipo?"] || "",
+        "📅 Fecha tentativa seguimiento/cierre":    c["📅 Fecha tentativa seguimiento/cierre"] || "",
+        "Descartado":                               c["Descartado"] || "",
+        // Rentas Vacacionales
+        "Agente de rentas":                         c["Agente de rentas"] || "",
+        "¿Necesitas algo especial?":                c["¿Necesitas algo especial?"] || "",
+        "Número de personas (total)":               c["Número de personas (total)"] || "",
+        "¿Cuántos días estarás con nosotros?":      c["¿Cuántos días estarás con nosotros?"] || "",
+        "Fecha de visita (rentas)":                 c["Fecha de visita (rentas)"] || "",
         "Propiedad seleccionada":                   c["Propiedad seleccionada"] || "",
+        "¿Dónde te gustaria invertir?":             c["¿Dónde te gustaria invertir?"] || "",
         "{{contact.suma_de_notas_de_agente}}": c["{{contact.suma_de_notas_de_agente}}"] || "0",
       };
     });
@@ -630,8 +644,15 @@ function AsesorSearch({ agents, leads, llamadas, mensajes }) {
       financ:      lead["🏦 ¿Cuenta con financiamiento o crédito?"] || "",
       cita:        lead["📅 ¿Desea agendar una cita?"] || "",
       medio:       lead["Medio de contacto de preferencia"] || "",
-      notaPrimerC: lead["Comentario de NOTA primer contacto"] || "",
-      notaSeguim:  lead["Comentario de seguimiento externo"] || "",
+      notaPrimerC:  lead["Comentario de NOTA primer contacto"] || "",
+      notaSeguim:   lead["Comentario de seguimiento externo"] || "",
+      notaCierre:   lead["Comentario NOTA Cierre Comercial"] || "",
+      presento:     lead["¿El prospecto se presentó a la cita?"] || "",
+      nivelCita:    lead["📊 Nivel de interés después de la cita"] || "",
+      queFalta:     lead["¿Qué le hace falta para cerrar?"] || "",
+      closer:       lead["¿Requiere closer u otro equipo?"] || "",
+      fechaCierre:  lead["📅 Fecha tentativa seguimiento/cierre"] || "",
+      descartado:   lead["Descartado"] || "",
       dias:        lead["Días Asignado"] !== "" && lead["Días Asignado"] !== undefined ? String(lead["Días Asignado"]) : "",
       contactId:   lead["Contact Id"] || "",
     };
@@ -695,7 +716,7 @@ function AsesorSearch({ agents, leads, llamadas, mensajes }) {
                     const diasNum=parseInt(lead.dias)||0;
                     const diasColor=diasNum>14?"#E8824A":diasNum>7?"#C8A84A":"#6DB87A";
                     const isExp=expandedLead===i;
-                    const hasNotes=lead.notaPrimerC||lead.notaSeguim||lead.cita||lead.medio;
+                    const hasNotes=lead.notaPrimerC||lead.notaSeguim||lead.notaCierre||lead.cita||lead.medio||lead.queFalta||lead.fechaCierre;
                     return <>
                       <tr key={i} onClick={()=>setExpandedLead(isExp?null:i)} style={{borderBottom:isExp?"none":"1px solid #0D1B2A",cursor:hasNotes?"pointer":"default",background:isExp?`${GOLD}0D`:"transparent"}} onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}0A`} onMouseLeave={e=>e.currentTarget.style.background=isExp?`${GOLD}0D`:"transparent"}>
                         <td style={{padding:"10px 14px",color:"#F0EAD6",fontWeight:600,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hasNotes?<span style={{marginRight:4,fontSize:9}}>{isExp?"▼":"▶"}</span>:null}{lead.contactName||"—"}</td>
@@ -712,7 +733,8 @@ function AsesorSearch({ agents, leads, llamadas, mensajes }) {
                       </tr>
                       {isExp&&<tr key={`exp-${i}`} style={{borderBottom:"1px solid #0D1B2A",background:"#070D14"}}>
                         <td colSpan={11} style={{padding:"12px 20px"}}>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                            {/* ── Primer contacto ── */}
                             {lead.notaPrimerC&&<div style={{background:"#0A1420",borderRadius:8,padding:"10px 14px",border:"1px solid #1E3050"}}>
                               <div style={{color:GOLD,fontFamily:MONO,fontSize:9,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>📝 Nota primer contacto</div>
                               <div style={{color:"#A8C0D8",fontFamily:MONO,fontSize:10,lineHeight:1.5}}>{lead.notaPrimerC}</div>
@@ -724,6 +746,23 @@ function AsesorSearch({ agents, leads, llamadas, mensajes }) {
                             {(lead.cita||lead.medio)&&<div style={{background:"#0A1420",borderRadius:8,padding:"10px 14px",border:"1px solid #1E3050"}}>
                               {lead.cita&&<div style={{marginBottom:6}}><span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>¿Desea cita? </span><span style={{color:"#F0EAD6",fontFamily:MONO,fontSize:10,fontWeight:600}}>{lead.cita}</span></div>}
                               {lead.medio&&<div><span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>Medio preferido: </span><span style={{color:"#F0EAD6",fontFamily:MONO,fontSize:10,fontWeight:600}}>{lead.medio}</span></div>}
+                            </div>}
+                            {/* ── Cierre comercial ── */}
+                            {lead.notaCierre&&<div style={{background:"#0A1420",borderRadius:8,padding:"10px 14px",border:`1px solid #6DB87A44`}}>
+                              <div style={{color:"#6DB87A",fontFamily:MONO,fontSize:9,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>🏁 Nota cierre comercial</div>
+                              <div style={{color:"#A8C0D8",fontFamily:MONO,fontSize:10,lineHeight:1.5}}>{lead.notaCierre}</div>
+                            </div>}
+                            {(lead.presento||lead.nivelCita||lead.queFalta||lead.closer||lead.fechaCierre)&&<div style={{background:"#0A1420",borderRadius:8,padding:"10px 14px",border:`1px solid #6DB87A33`}}>
+                              <div style={{color:"#6DB87A",fontFamily:MONO,fontSize:9,fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>📋 Cierre comercial</div>
+                              {lead.presento&&<div style={{marginBottom:5}}><span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>¿Se presentó? </span><span style={{color:"#F0EAD6",fontFamily:MONO,fontSize:10,fontWeight:600}}>{lead.presento}</span></div>}
+                              {lead.nivelCita&&<div style={{marginBottom:5}}><span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>Interés post-cita: </span><span style={{color:GOLD,fontFamily:MONO,fontSize:10,fontWeight:600}}>{lead.nivelCita}</span></div>}
+                              {lead.queFalta&&<div style={{marginBottom:5}}><span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>Falta para cerrar: </span><span style={{color:"#E8824A",fontFamily:MONO,fontSize:10,fontWeight:600}}>{lead.queFalta}</span></div>}
+                              {lead.closer&&<div style={{marginBottom:5}}><span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>¿Requiere closer? </span><span style={{color:"#B87CC8",fontFamily:MONO,fontSize:10,fontWeight:600}}>{lead.closer}</span></div>}
+                              {lead.fechaCierre&&<div><span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>Fecha cierre: </span><span style={{color:"#7DB8D4",fontFamily:MONO,fontSize:10,fontWeight:600}}>{lead.fechaCierre}</span></div>}
+                            </div>}
+                            {lead.descartado&&<div style={{background:"#1A0A0A",borderRadius:8,padding:"10px 14px",border:"1px solid #E8824A44"}}>
+                              <div style={{color:"#E8824A",fontFamily:MONO,fontSize:9,fontWeight:700,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>⚠️ Descartado</div>
+                              <div style={{color:"#A8C0D8",fontFamily:MONO,fontSize:10}}>{lead.descartado}</div>
                             </div>}
                           </div>
                         </td>
