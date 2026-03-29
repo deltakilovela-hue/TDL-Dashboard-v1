@@ -1397,7 +1397,7 @@ function ReportSidebar({reports,activeId,onSelect,onDelete,onNew,onGHLSync}) {
         {reports.map(r=>(
           <div key={r.id} onClick={()=>onSelect(r.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,cursor:"pointer",background:r.id===activeId?`${GOLD}1A`:"transparent",border:r.id===activeId?`1px solid ${GOLD}33`:"1px solid transparent",marginBottom:3,transition:"all 0.15s"}} onMouseEnter={e=>{if(r.id!==activeId)e.currentTarget.style.background="#0f1923";}} onMouseLeave={e=>{if(r.id!==activeId)e.currentTarget.style.background="transparent";}}>
             <div><div style={{color:r.id===activeId?GOLD:"#A8C0D8",fontFamily:MONO,fontSize:11,fontWeight:600,lineHeight:1.3}}>{r.label}</div><div style={{color:"#3A5070",fontFamily:MONO,fontSize:9,marginTop:1}}>{r.createdAt}</div></div>
-            {r.id!=="report_seed_feb7_mar9"&&<button onClick={e=>{e.stopPropagation();onDelete(r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#3A5070",padding:2}} onMouseEnter={e=>e.currentTarget.style.color="#E8824A"} onMouseLeave={e=>e.currentTarget.style.color="#3A5070"}><Trash2 size={11}/></button>}
+            <button onClick={e=>{e.stopPropagation();onDelete(r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#3A5070",padding:2}} onMouseEnter={e=>e.currentTarget.style.color="#E8824A"} onMouseLeave={e=>e.currentTarget.style.color="#3A5070"}><Trash2 size={11}/></button>
           </div>
         ))}
       </div>
@@ -1531,8 +1531,15 @@ function ReportDashboard({report,prevReport}) {
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function TDLApp() {
-  const [reports,setReports]=useState(()=>{ const saved=loadReports(); return saved.some(r=>r.id===SEED_REPORT.id)?saved:[SEED_REPORT,...saved]; });
-  const [activeReportId,setActiveReportId]=useState(SEED_REPORT.id);
+  // Si el usuario borró el demo manualmente, no volver a inyectarlo
+  const seedHidden = ()=>{ try{ return localStorage.getItem("tdl_seed_hidden")==="1"; }catch{ return false; } };
+  const [reports,setReports]=useState(()=>{
+    const saved=loadReports();
+    if(seedHidden()) return saved.filter(r=>r.id!==SEED_REPORT.id);
+    return saved.some(r=>r.id===SEED_REPORT.id)?saved:[SEED_REPORT,...saved];
+  });
+  const firstId = reports[0]?.id || SEED_REPORT.id;
+  const [activeReportId,setActiveReportId]=useState(firstId);
   const [showModal,setShowModal]=useState(false);
   const [showComparativa,setShowComparativa]=useState(false);
 
@@ -1543,7 +1550,11 @@ export default function TDLApp() {
   const prevReport=activeIndex>0?reports[activeIndex-1]:null;
 
   const saveReport=r=>{ setReports(prev=>[...prev,r]); setActiveReportId(r.id); };
-  const deleteReport=id=>{ setReports(prev=>prev.filter(r=>r.id!==id)); if(activeReportId===id)setActiveReportId(reports[0]?.id); };
+  const deleteReport=id=>{
+    if(id===SEED_REPORT.id){ try{ localStorage.setItem("tdl_seed_hidden","1"); }catch{} }
+    setReports(prev=>{ const next=prev.filter(r=>r.id!==id); return next; });
+    if(activeReportId===id){ const rem=reports.filter(r=>r.id!==id); setActiveReportId(rem[0]?.id||""); }
+  };
 
   return (
     <div style={{display:"flex",minHeight:"100vh",background:"#070D14"}}>
