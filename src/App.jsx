@@ -296,7 +296,14 @@ function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[], llamadas
   // Los contactos ya vienen con los mismos nombres de columna que el CSV de GHL
   // ("Assigned To", "Stage", "Pipeline", "Nombre del Contacto", etc.)
 
-  const contactos = contacts;
+  // Deduplicar por Contact Id por si acaso hay duplicados del sync
+  const seenIds = new Set();
+  const contactos = contacts.filter(c => {
+    const id = c["Contact Id"] || c["contact_id"] || "";
+    if (!id) return true; // sin ID los dejamos pasar
+    if (seenIds.has(id)) return false;
+    seenIds.add(id); return true;
+  });
 
   // Para leads: contactos con Stage o Opportunities
   const leads = contacts
@@ -519,6 +526,151 @@ function ScoreBar({value,color}) {
 function RankBadge({rank}) {
   const m=rank===1?"🥇":rank===2?"🥈":rank===3?"🥉":null;
   return <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:30,height:30,borderRadius:"50%",background:RANK_COLORS[rank-1]||"#0E2030",fontFamily:MONO,fontSize:m?16:11,fontWeight:700,color:rank<=3?"#fff":"#5A7090",flexShrink:0}}>{m||`#${rank}`}</div>;
+}
+
+// ── Contacts View (tabla CRM con filtros) ─────────────────────────────────────
+function ContactsView({ contactos }) {
+  const [agentFilter, setAgentFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const PER = 15;
+
+  // Lista de asesores únicos
+  const agents = useMemo(() => {
+    const s = new Set();
+    contactos.forEach(c => { const a = c["Usuario asignado"] || c["Assigned To"]; if (a && a !== "N/A") s.add(a); });
+    return [...s].sort();
+  }, [contactos]);
+
+  const filtered = useMemo(() => {
+    return contactos.filter(c => {
+      const agent = c["Usuario asignado"] || c["Assigned To"] || "";
+      const name  = (c["Nombre del Contacto"] || c["First Name"] || "").toLowerCase();
+      const phone = (c["Número de teléfono"] || c["Phone"] || "").toLowerCase();
+      if (agentFilter && agent !== agentFilter) return false;
+      if (search && !name.includes(search.toLowerCase()) && !phone.includes(search.toLowerCase())) return false;
+      return true;
+    });
+  }, [contactos, agentFilter, search]);
+
+  // Reset page on filter change
+  const handleAgent = v => { setAgentFilter(v); setPage(0); };
+  const handleSearch = v => { setSearch(v); setPage(0); };
+
+  const total = Math.ceil(filtered.length / PER);
+  const rows  = filtered.slice(page * PER, (page + 1) * PER);
+
+  const NIVEL_COLOR = v => {
+    if (!v) return "#5A7090";
+    const l = v.toLowerCase();
+    if (l.includes("alto") || l.includes("caliente")) return "#6DB87A";
+    if (l.includes("medio") || l.includes("tibio"))   return "#C8A84A";
+    if (l.includes("bajo")  || l.includes("frío") || l.includes("frio")) return "#E8824A";
+    return "#A8C0D8";
+  };
+
+  if (!contactos.length) return (
+    <div style={{background:"#0A1420",border:`1px solid ${GOLD}22`,borderRadius:16,padding:48,textAlign:"center",color:"#3A5070",fontFamily:MONO,fontSize:12}}>
+      Haz sync con GHL para ver los contactos
+    </div>
+  );
+
+  return (
+    <div>
+      <SectionTitle>👤 Contactos ({contactos.length})</SectionTitle>
+      {/* Filtros */}
+      <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+        <input placeholder="🔍 Buscar nombre o teléfono…" value={search} onChange={e=>handleSearch(e.target.value)}
+          style={{background:"#0f1923",border:"1px solid #1E3050",color:"#F0EAD6",borderRadius:8,padding:"8px 12px",fontFamily:MONO,fontSize:11,outline:"none",minWidth:220,flex:1}}/>
+        <select value={agentFilter} onChange={e=>handleAgent(e.target.value)}
+          style={{background:"#0f1923",border:`1px solid ${agentFilter?GOLD:"#1E3050"}`,color:agentFilter?GOLD:"#8A9BB8",borderRadius:8,padding:"8px 12px",fontFamily:MONO,fontSize:11,cursor:"pointer",outline:"none",minWidth:200}}>
+          <option value="">Todos los asesores ({contactos.length})</option>
+          {agents.map(a => {
+            const cnt = contactos.filter(c=>(c["Usuario asignado"]||c["Assigned To"]||"")===a).length;
+            return <option key={a} value={a}>{a} ({cnt})</option>;
+          })}
+        </select>
+        {(agentFilter||search)&&<button onClick={()=>{setAgentFilter("");setSearch("");setPage(0);}} style={{background:"#1A2B4A",border:"1px solid #2A3D5A",color:"#A8C0D8",borderRadius:8,padding:"8px 12px",cursor:"pointer",fontFamily:MONO,fontSize:10}}>✕ Limpiar</button>}
+        <span style={{color:"#5A7090",fontFamily:MONO,fontSize:10,marginLeft:"auto"}}>{filtered.length} resultado{filtered.length!==1?"s":""}</span>
+      </div>
+      {/* Tabla */}
+      <div style={{background:"#0A1420",border:`1px solid ${GOLD}22`,borderRadius:14,overflow:"hidden"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:MONO,fontSize:11}}>
+            <thead>
+              <tr style={{background:"#0D1B2A",borderBottom:`1px solid ${GOLD}22`}}>
+                {["Contacto","Teléfono","Asesor Asignado","Oportunidad","🌡️ Interés","💸 Presupuesto","🏦 Financ.","Días","Tags"].map(h=>(
+                  <th key={h} style={{padding:"10px 14px",textAlign:"left",color:GOLD,fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((c,i)=>{
+                const name    = c["Nombre del Contacto"] || `${c["First Name"]||""} ${c["Last Name"]||""}`.trim() || "—";
+                const phone   = c["Número de teléfono"] || c["Phone"] || "—";
+                const agent   = c["Usuario asignado"] || c["Assigned To"] || "—";
+                const opp     = c["Opportunities"] || "";
+                const nivel   = c["🌡️ Nivel de interés del prospecto"] || "";
+                const presup  = c["💸 Presupuesto estimado"] || "";
+                const financ  = c["🏦 ¿Cuenta con financiamiento o crédito?"] || "";
+                const dias    = c["Días Asignado"] !== undefined && c["Días Asignado"] !== "" ? Number(c["Días Asignado"]) : null;
+                const tags    = c["Tags"] || "";
+                const diasColor = dias===null?"#5A7090":dias>30?"#E8824A":dias>14?"#C8A84A":"#6DB87A";
+                const financOk  = financ && (financ.toLowerCase().includes("sí") || financ.toLowerCase().includes("si"));
+                // Extraer pipeline del string "status: pipeline - stage"
+                const oppParts = opp.match(/^(\w+):\s*(.+?)\s*-\s*(.+)$/);
+                const pipeline = oppParts ? oppParts[2] : "";
+                const stage    = oppParts ? oppParts[3] : opp;
+                const pc = pipeline ? (Object.entries(PIPELINE_CONFIG).find(([k])=>pipeline.includes(k)) || [null,{color:"#5A7090"}])[1] : {color:"#5A7090"};
+                return (
+                  <tr key={i} style={{borderBottom:"1px solid #0D1B2A"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}0A`}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <td style={{padding:"9px 14px",color:"#F0EAD6",fontWeight:600,maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</td>
+                    <td style={{padding:"9px 14px",color:"#5A7090",whiteSpace:"nowrap",fontSize:10}}>{phone}</td>
+                    <td style={{padding:"9px 14px",color:"#A8C0D8",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:10}}>{agent}</td>
+                    <td style={{padding:"9px 14px",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {pipeline&&<span style={{color:pc.color,background:`${pc.color}18`,borderRadius:5,padding:"2px 7px",fontSize:9,fontWeight:700,marginRight:5}}>{pipeline.replace("01 - ","").replace("02 - ","")}</span>}
+                      {stage&&<span style={{color:"#8A9BB8",fontSize:9}}>{stage}</span>}
+                    </td>
+                    <td style={{padding:"9px 14px",whiteSpace:"nowrap"}}>
+                      {nivel?<span style={{color:NIVEL_COLOR(nivel),fontSize:9,fontWeight:600}}>{nivel}</span>:<span style={{color:"#2A3D5A"}}>—</span>}
+                    </td>
+                    <td style={{padding:"9px 14px",color:"#6DB87A",whiteSpace:"nowrap",fontSize:10}}>{presup||<span style={{color:"#2A3D5A"}}>—</span>}</td>
+                    <td style={{padding:"9px 14px",textAlign:"center"}}>
+                      {financ?<span style={{color:financOk?"#6DB87A":"#E8824A",fontSize:9,fontWeight:700}}>{financOk?"✓ Sí":"✗ No"}</span>:<span style={{color:"#2A3D5A"}}>—</span>}
+                    </td>
+                    <td style={{padding:"9px 14px",textAlign:"center"}}>
+                      {dias!==null?<span style={{color:diasColor,fontWeight:700,fontSize:10}}>{dias}d</span>:<span style={{color:"#2A3D5A"}}>—</span>}
+                    </td>
+                    <td style={{padding:"9px 14px",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {tags.split(",").filter(Boolean).slice(0,3).map((t,ti)=>(
+                        <span key={ti} style={{background:"#1A2B4A",color:"#5A7090",borderRadius:4,padding:"2px 6px",fontSize:8,marginRight:3}}>{t.trim()}</span>
+                      ))}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {/* Paginación */}
+        {total > 1 && (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",borderTop:"1px solid #0D1B2A"}}>
+            <span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>Página {page+1} de {total} · {filtered.length} contactos</span>
+            <div style={{display:"flex",gap:4}}>
+              <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={page===0} style={{background:page===0?"#070D14":"#0f1923",border:"1px solid #1E3050",color:page===0?"#2A3D5A":"#A8C0D8",borderRadius:6,padding:"4px 10px",cursor:page===0?"default":"pointer",fontFamily:MONO,fontSize:10}}>‹</button>
+              {Array.from({length:Math.min(7,total)},(_,i)=>{
+                const p=total<=7?i:Math.max(0,Math.min(total-7,page-3))+i;
+                return <button key={p} onClick={()=>setPage(p)} style={{background:p===page?GOLD:"#0f1923",color:p===page?NAVY:"#8A9BB8",border:`1px solid ${p===page?GOLD:"#1E3050"}`,borderRadius:6,padding:"4px 9px",cursor:"pointer",fontFamily:MONO,fontSize:10,fontWeight:p===page?700:400}}>{p+1}</button>;
+              })}
+              <button onClick={()=>setPage(p=>Math.min(total-1,p+1))} disabled={page===total-1} style={{background:page===total-1?"#070D14":"#0f1923",border:"1px solid #1E3050",color:page===total-1?"#2A3D5A":"#A8C0D8",borderRadius:6,padding:"4px 10px",cursor:page===total-1?"default":"pointer",fontFamily:MONO,fontSize:10}}>›</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Date Filter Bar ───────────────────────────────────────────────────────────
@@ -1245,7 +1397,7 @@ function AgentDetail({agent,rank,datasets,onBack}) {
         {myL.length>0&&<PiePanel title="Estado llamadas" data={estadoL}/>}
         {myM.length>0&&<PiePanel title="Canal mensajes" data={canalM}/>}
       </div>
-      {myL.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus llamadas" rows={myL} cols={["Nombre del Contacto","Duración (in segundos)","Estado de la llamada"]}/></div>}
+      {myL.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus llamadas" rows={myL.map(r=>({...r,"Duración":parseInt(r["Duración (in segundos)"]||0)>0?`${r["Duración (in segundos)"]}s`:"—"}))} cols={["Nombre del Contacto","Duración","Estado de la llamada"]}/></div>}
       {myM.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus conversaciones" rows={myM} cols={["Nombre del Contacto","Mensajes no leídos","Tipo","Canal del último Mensaje"]}/></div>}
       {myC.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus contactos" rows={myC} cols={["Nombre del Contacto","Número de teléfono"]}/></div>}
       {myLe.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus leads abd." rows={myLe} cols={["Primary Contact Name","Pipeline Name","Stage","Source","Created On"]}/></div>}
@@ -1518,9 +1670,9 @@ function ReportDashboard({report,prevReport}) {
           {activeTab==="pipeline"&&<PipelineKanban leads={leads} llamadas={llamadas} mensajes={mensajes}/>}
           {activeTab==="asesores"&&<LeadsPanel agents={filteredAgentScores}/>}
           {activeTab==="semanas"&&<WeeklyView report={{...report,datasets:filteredDatasets}}/>}
-          {activeTab==="llamadas"&&<><SectionTitle>📞 Llamadas Salientes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={llamadasPorAgente} dataKey="value" nameKey="name" color={GOLD}/><PiePanel title="Estado" data={estadoLlamadas}/></div>{llamadas.length>0&&<DataTable title="Detalle" rows={llamadas} cols={["Nombre del Contacto","Llamar realizada Vía","Duración (in segundos)","Estado de la llamada"]}/>}</>}
+          {activeTab==="llamadas"&&<><SectionTitle>📞 Llamadas Salientes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={llamadasPorAgente} dataKey="value" nameKey="name" color={GOLD}/><PiePanel title="Estado" data={estadoLlamadas}/></div>{llamadas.length>0&&<DataTable title="Detalle" rows={llamadas.map(r=>({...r,"Duración":parseInt(r["Duración (in segundos)"]||0)>0?`${r["Duración (in segundos)"]}s`:"—"}))} cols={["Nombre del Contacto","Llamar realizada Vía","Duración","Estado de la llamada"]}/>}</>}
           {activeTab==="mensajes"&&<><SectionTitle>💬 Mensajes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={mensajesPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>{canalDist.length>0&&<PiePanel title="Canal" data={canalDist}/>}</div>{mensajes.length>0&&<DataTable title="Detalle" rows={mensajes} cols={["Nombre del Contacto","Mensajes no leídos","Asignado a","Tipo","Canal del último Mensaje"]}/>}</>}
-          {activeTab==="contactos"&&<><SectionTitle>👤 Contactos</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={contactosPorAgente} dataKey="value" nameKey="name" color={GOLD}/>{interesDist.length>0&&<PiePanel title="🌡️ Nivel de Interés" data={interesDist}/>}</div>{contactos.length>0&&<DataTable title="Detalle" rows={contactos} cols={["Nombre del Contacto","Usuario asignado","Opportunities","🌡️ Nivel de interés del prospecto","💸 Presupuesto estimado","🏦 ¿Cuenta con financiamiento o crédito?","Días Asignado"]}/>}</>}
+          {activeTab==="contactos"&&<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><ChartPanel title="Contactos por Asesor" data={contactosPorAgente} dataKey="value" nameKey="name" color={GOLD}/>{interesDist.length>0&&<PiePanel title="🌡️ Nivel de Interés" data={interesDist}/>}</div><ContactsView contactos={datasets?.contactos||[]}/></>}
           {activeTab==="leads"&&<><SectionTitle>🚨 LEADS</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{leadsPorStage.length>0&&<ChartPanel title="Por Etapa" data={leadsPorStage} dataKey="value" nameKey="name" color="#E8824A"/>}{leadsPorAgente.length>0&&<ChartPanel title="Por Agente" data={leadsPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>}</div>{leads.length>0&&<DataTable title="Detalle" rows={leads} cols={["Primary Contact Name","Assigned User","Pipeline Name","Stage","🌡️ Nivel de interés del prospecto","💸 Presupuesto estimado","🏦 ¿Cuenta con financiamiento o crédito?","Días Asignado","Source"]}/>}</>}
           {activeTab==="presupuestos"&&<><SectionTitle>💰 Presupuestos</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{interesDist.length>0&&<PiePanel title="Nivel de Interés" data={interesDist}/>}{charts.contactosPorMedio&&<PiePanel title="Por Medio" data={charts.contactosPorMedio}/>}</div>{presupuestos.length>0&&<DataTable title="Detalle" rows={presupuestos} cols={["identificador_presupuesto","Presupuesto","Nivel_interes","Owner","Created On"]}/>}</>}
         </>}

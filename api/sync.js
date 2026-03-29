@@ -109,13 +109,14 @@ async function fetchContacts(locationId) {
   const all = [];
   let startAfterId = null;
 
+  const seen = new Set();
   while (true) {
     const data = await ghlGet("/contacts/", { locationId, limit: "100", startAfterId });
-    const batch = data.contacts || [];
+    const batch = (data.contacts || []).filter(c => { if (!c.id || seen.has(c.id)) return false; seen.add(c.id); return true; });
     all.push(...batch);
     const nextId = data.meta?.startAfterId;
-    if (batch.length < 100 || !nextId || all.length >= (data.meta?.total || Infinity)) break;
-    startAfterId = batch[batch.length - 1].id;
+    if ((data.contacts||[]).length < 100 || !nextId || all.length >= (data.meta?.total || Infinity)) break;
+    startAfterId = data.contacts[data.contacts.length - 1].id;
   }
   return all;
 }
