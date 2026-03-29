@@ -261,23 +261,35 @@ const GHL_SERVER = (typeof window !== "undefined" && window.location.hostname !=
   ? ""           // Vercel: /api/sync, /api/status (mismo dominio)
   : "http://localhost:3001"; // Local: servidor Node.js
 
-// Parsea "Opportunities" del JSON de GHL: "open 01 - Desarrollos Interesado en proyecto 🤖"
+// Parsea "Opportunities" del JSON de GHL: formatos:
+//   antiguo: "open 01 - Desarrollos Interesado en proyecto 🤖"
+//   nuevo:   "open: 01 - Desarrollos - Interesado en proyecto 🤖"
 function parseMainOpportunityClient(oppsStr) {
   if (!oppsStr) return { status:"", pipeline:"", stage:"" };
   const KNOWN = ["01 - Desarrollos","02 - Cierre","Rentas Vacacionales","Seguimiento IA","Recepción Proveedores"];
-  const entries = oppsStr.split(/, (?=open |won |lost )/i);
+  const entries = String(oppsStr).split(/;|, (?=open |won |lost )/i).map(s=>s.trim()).filter(Boolean);
   const parsed = entries.map(entry => {
-    const sm = entry.match(/^(open|won|lost)\s+/i);
+    // Soporta "open: pipeline - stage" (nuevo) y "open pipeline stage" (antiguo)
+    const sm = entry.match(/^(open|won|lost)[:\s]+/i);
     const status = sm ? sm[1].toLowerCase() : "open";
-    const rest = entry.replace(/^(open|won|lost)\s+/i,"").trim();
+    const rest = entry.replace(/^(open|won|lost)[:\s]+/i,"").trim();
     let pipeline="", stage=rest;
-    for(const p of KNOWN){ if(rest===p||rest.startsWith(p+" ")){pipeline=p;stage=rest.slice(p.length).trim();break;} }
+    for(const p of KNOWN){
+      if(rest===p||rest.startsWith(p+" ")||rest.startsWith(p+" -")){
+        pipeline=p;
+        stage=rest.slice(p.length).replace(/^\s*-\s*/,"").trim();
+        break;
+      }
+    }
     return {status,pipeline,stage};
   });
   for(const p of ["01 - Desarrollos","02 - Cierre","Rentas Vacacionales"]){
     const f=parsed.find(o=>o.pipeline===p); if(f) return f;
   }
-  return parsed.find(o=>o.status==="open")||parsed[0]||{status:"",pipeline:"",stage:""};
+  // Nunca devolver "Seguimiento IA" como resultado principal
+  return parsed.find(o=>o.status==="open"&&o.pipeline!=="Seguimiento IA")||
+         parsed.find(o=>o.pipeline!=="Seguimiento IA")||
+         parsed[0]||{status:"",pipeline:"",stage:""};
 }
 
 function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[], llamadasRaw=[]) {
@@ -323,7 +335,7 @@ function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[], llamadas
     if (!name || name === "N/A" || name === "") return null;
     if (!agentMap[name]) agentMap[name] = {
       name, llamadasTotal:0, llamadasContestadas:0, llamadasPerdidas:0, duracionTotal:0,
-      mensajesTotal:0, mensajesUnread:0, mensajesInbound:0,
+      mensajesTotal:0, mensajesUnread:0, mensajesInbound:0, mensajesOutboundLeads:0,
       contactosTotal:0, leadsAbandonados:0,
     };
     return agentMap[name];
@@ -347,12 +359,25 @@ function buildReportFromGHLContacts(contacts, syncDate, mensajesRaw=[], llamadas
     }
   });
 
+  // Mapa contactId → agente asignado (para cruzar mensajes outbound con leads)
+  const contactAgentMap = {};
+  contactos.forEach(c => {
+    const id = c["Contact Id"] || c["contact_id"] || "";
+    if (id) contactAgentMap[id] = c["Assigned To"] || c["Usuario asignado"] || "";
+  });
+
   mensajesRaw.forEach(r => {
     const a = getAgent(r["Asignado a"]);
     if (!a) return;
     a.mensajesTotal++;
     if (r["Tipo"] === "Unread") a.mensajesUnread++;
-    if ((r["Dirección del último mensaje"]||"").toLowerCase() === "inbound") a.mensajesInbound++;
+    const dir = (r["Dirección del último mensaje"]||"").toLowerCase();
+    if (dir === "inbound") a.mensajesInbound++;
+    // Mensajes outbound enviados a leads/contactos asignados a este asesor
+    if (dir === "outbound") {
+      const leadAgent = String(contactAgentMap[r["Contact Id"]] || "").trim();
+      if (leadAgent && leadAgent === String(a.name).trim()) a.mensajesOutboundLeads++;
+    }
   });
 
   const agentList = Object.values(agentMap);
@@ -1122,6 +1147,7 @@ function AgentDetail({agent,rank,datasets,onBack}) {
         <KPICard icon={MessageSquare} label="Mensajes" value={agent.mensajesTotal} color="#4A7FA5"/>
         <KPICard icon={AlertTriangle} label="Sin Leer" value={agent.mensajesUnread} color="#E8824A"/>
         <KPICard icon={Users} label="Contactos" value={agent.contactosTotal} color="#B87CC8"/>
+        {(agent.mensajesOutboundLeads||0)>0&&<KPICard icon={MessageSquare} label="Msg Outbound" value={agent.mensajesOutboundLeads} color="#6DB87A" sub="a sus leads"/>}
       </div>
       <div style={{display:"grid",gridTemplateColumns:myL.length&&myM.length?"1fr 1fr":"1fr",gap:12,marginBottom:12}}>
         {myL.length>0&&<PiePanel title="Estado llamadas" data={estadoL}/>}
@@ -1130,7 +1156,7 @@ function AgentDetail({agent,rank,datasets,onBack}) {
       {myL.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus llamadas" rows={myL} cols={["Nombre del Contacto","Duración (in segundos)","Estado de la llamada"]}/></div>}
       {myM.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus conversaciones" rows={myM} cols={["Nombre del Contacto","Mensajes no leídos","Tipo","Canal del último Mensaje"]}/></div>}
       {myC.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus contactos" rows={myC} cols={["Nombre del Contacto","Número de teléfono"]}/></div>}
-      {myLe.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus leads abd." rows={myLe} cols={["Primary Contact Name","Stage","Source","Created On"]}/></div>}
+      {myLe.length>0&&<div style={{marginBottom:12}}><DataTable title="Sus leads abd." rows={myLe} cols={["Primary Contact Name","Pipeline Name","Stage","Source","Created On"]}/></div>}
     </div>
   );
 }
@@ -1403,8 +1429,8 @@ function ReportDashboard({report,prevReport}) {
           {activeTab==="semanas"&&<WeeklyView report={{...report,datasets:filteredDatasets}}/>}
           {activeTab==="llamadas"&&<><SectionTitle>📞 Llamadas Salientes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={llamadasPorAgente} dataKey="value" nameKey="name" color={GOLD}/><PiePanel title="Estado" data={estadoLlamadas}/></div>{llamadas.length>0&&<DataTable title="Detalle" rows={llamadas} cols={["Nombre del Contacto","Llamar realizada Vía","Duración (in segundos)","Estado de la llamada"]}/>}</>}
           {activeTab==="mensajes"&&<><SectionTitle>💬 Mensajes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={mensajesPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>{canalDist.length>0&&<PiePanel title="Canal" data={canalDist}/>}</div>{mensajes.length>0&&<DataTable title="Detalle" rows={mensajes} cols={["Nombre del Contacto","Mensajes no leídos","Asignado a","Tipo","Canal del último Mensaje"]}/>}</>}
-          {activeTab==="contactos"&&<><SectionTitle>👤 Contactos</SectionTitle><div style={{marginBottom:12}}><ChartPanel title="Por Agente" data={contactosPorAgente} dataKey="value" nameKey="name" color={GOLD}/></div>{contactos.length>0&&<DataTable title="Detalle" rows={contactos} cols={["Nombre del Contacto","Número de teléfono","Usuario asignado"]}/>}</>}
-          {activeTab==="leads"&&<><SectionTitle>🚨 LEADS</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{leadsPorStage.length>0&&<ChartPanel title="Por Etapa" data={leadsPorStage} dataKey="value" nameKey="name" color="#E8824A"/>}{leadsPorAgente.length>0&&<ChartPanel title="Por Agente" data={leadsPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>}</div>{leads.length>0&&<DataTable title="Detalle" rows={leads} cols={["Primary Contact Name","Assigned User","Stage","Source","Created On"]}/>}</>}
+          {activeTab==="contactos"&&<><SectionTitle>👤 Contactos</SectionTitle><div style={{marginBottom:12}}><ChartPanel title="Por Agente" data={contactosPorAgente} dataKey="value" nameKey="name" color={GOLD}/></div>{contactos.length>0&&<DataTable title="Detalle" rows={contactos} cols={["Nombre del Contacto","Número de teléfono","Usuario asignado","Opportunities","Días Asignado"]}/>}</>}
+          {activeTab==="leads"&&<><SectionTitle>🚨 LEADS</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{leadsPorStage.length>0&&<ChartPanel title="Por Etapa" data={leadsPorStage} dataKey="value" nameKey="name" color="#E8824A"/>}{leadsPorAgente.length>0&&<ChartPanel title="Por Agente" data={leadsPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>}</div>{leads.length>0&&<DataTable title="Detalle" rows={leads} cols={["Primary Contact Name","Assigned User","Pipeline Name","Stage","Source","Created On"]}/>}</>}
           {activeTab==="presupuestos"&&<><SectionTitle>💰 Presupuestos</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{interesDist.length>0&&<PiePanel title="Nivel de Interés" data={interesDist}/>}{charts.contactosPorMedio&&<PiePanel title="Por Medio" data={charts.contactosPorMedio}/>}</div>{presupuestos.length>0&&<DataTable title="Detalle" rows={presupuestos} cols={["identificador_presupuesto","Presupuesto","Nivel_interes","Owner","Created On"]}/>}</>}
         </>}
       </div>

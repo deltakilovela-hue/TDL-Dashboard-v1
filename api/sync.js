@@ -57,6 +57,9 @@ async function fetchOpportunityMap(locationId) {
         const stageName    = opp.pipelineStage?.name || opp.pipelineStageName || opp.name || "";
         const status       = opp.status || "open";
 
+        // Descartar "Seguimiento IA" — no debe aparecer como oportunidad principal
+        if (pipelineName === "Seguimiento IA") return;
+
         const current = map[contactId];
         const isMainPipeline = PRIORITY.includes(pipelineName);
         const currentIsMain  = current && PRIORITY.includes(current.pipeline);
@@ -130,9 +133,10 @@ function normalizeContact(c, userMap, oppMap) {
   const tags      = Array.isArray(c.tags) ? c.tags.join(", ") : (c.tags || "");
 
   // Pipeline/Stage: del mapa de oportunidades (más completo que el campo de contacto)
-  const opp      = oppMap[c.id] || {};
-  const pipeline = opp.pipeline || c.pipelineName || "";
-  const stage    = opp.stage    || c.pipelineStage || c.pipelineStageName || "";
+  const opp       = oppMap[c.id] || {};
+  const pipeline  = opp.pipeline || c.pipelineName || "";
+  const stage     = opp.stage    || c.pipelineStage || c.pipelineStageName || "";
+  const oppStatus = opp.status   || "open";
 
   return {
     "Contact Id":    c.id || "",
@@ -148,7 +152,8 @@ function normalizeContact(c, userMap, oppMap) {
     "Contact Type":  c.type || "lead",
     "Assigned To":   ownerName,
     "Updated":       c.dateUpdated || "",
-    "Opportunities": pipeline && stage ? `open ${pipeline} ${stage}` : "",
+    "Opportunities": pipeline && stage ? `${oppStatus}: ${pipeline} - ${stage}` : "",
+    "Días Asignado": created ? Math.floor((Date.now() - new Date(typeof created === "number" ? (created > 1e10 ? created : created * 1000) : created).getTime()) / 86400000) : "",
     "Last Note":     c.lastNote || "",
     // Custom fields con nombres del CSV
     "🌡️ Nivel de interés del prospecto":        custom["nivel_de_interes_del_prospecto"] || custom["nivel_interes"] || "",
@@ -184,15 +189,34 @@ function isCallConversation(c) {
          channel.includes("call") || channel.includes("phone");
 }
 
+// ── Obtiene detalles reales de una llamada desde sus mensajes ─────────────────
+async function fetchCallMessages(convId) {
+  try {
+    const data = await ghlGet(`/conversations/${convId}/messages`, { limit: "20" });
+    // GHL puede devolver { messages: [...] } o { messages: { messages: [...] } }
+    const msgs = Array.isArray(data.messages) ? data.messages
+               : Array.isArray(data.messages?.messages) ? data.messages.messages : [];
+    const callMsg = msgs.find(m => m.meta?.callDuration !== undefined) ||
+                    msgs.find(m => m.messageType === "TYPE_CALL" || m.type === 10);
+    if (!callMsg) return null;
+    return {
+      duration: parseInt(callMsg.meta?.callDuration || 0),
+      status:   callMsg.meta?.callStatus || callMsg.meta?.status || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── Normaliza llamada (conversación de tipo llamada) ─────────────────────────
-function normalizeLlamada(c, userMap) {
+function normalizeLlamada(c, userMap, detail = null) {
   const agentName = userMap[c.assignedTo] || c.ownerName || c.assignedTo || "";
   // Intentar inferir estado: si hay mensajes sin leer de entrada → posiblemente perdida
   const direction = String(c.lastMessageDirection || "").toLowerCase();
   const unread    = c.unreadCount || 0;
   let status = "Answered";
   if (unread > 0 && direction === "inbound") status = "No Answer";
-  else if (direction === "inbound") status = "Answered"; // inbound atendida
+  else if (direction === "inbound") status = "Answered";
   // Si el lastMessageBody contiene "missed" o "no answer"
   const body = String(c.lastMessageBody || "").toLowerCase();
   if (body.includes("missed") || body.includes("no answer") || body.includes("no contestada")) {
@@ -206,6 +230,16 @@ function normalizeLlamada(c, userMap) {
   const durMatch = body.match(/(\d+)\s*(seg|sec|s\b|second)/i) ||
                    body.match(/duration[:\s]+(\d+)/i);
   if (durMatch) duration = durMatch[1];
+
+  // Sobreescribir con datos reales de los mensajes de la conversación (si disponibles)
+  if (detail) {
+    if (detail.duration > 0) duration = String(detail.duration);
+    if (detail.status) {
+      const st = detail.status.toLowerCase();
+      if (st === "completed" || st === "answered") status = "Answered";
+      else if (st === "no-answer" || st === "busy" || st === "failed" || st === "canceled") status = "No Answer";
+    }
+  }
 
   return {
     "Nombre del Contacto":    c.contactName || c.fullName || "",
@@ -259,7 +293,16 @@ export default async function handler(req, res) {
     const callConvs = rawConversations.filter(c => isCallConversation(c));
     const msgConvs  = rawConversations.filter(c => !isCallConversation(c));
 
-    const llamadas = callConvs.map((c) => normalizeLlamada(c, userMap));
+    // Obtener duración + estado reales de las llamadas más recientes (máx 20, paralelo)
+    const callDetailMap = {};
+    const toDetail = callConvs.slice(0, 20);
+    const detailResults = await Promise.allSettled(toDetail.map(c => fetchCallMessages(c.id)));
+    toDetail.forEach((c, i) => {
+      const r = detailResults[i];
+      if (r.status === "fulfilled" && r.value) callDetailMap[c.id] = r.value;
+    });
+
+    const llamadas = callConvs.map((c) => normalizeLlamada(c, userMap, callDetailMap[c.id] || null));
     const mensajes = msgConvs.map((c)  => normalizeConversation(c, userMap));
 
     res.json({
