@@ -765,6 +765,15 @@ function SurveysView({ contactos, llamadas }) {
     return Math.round((filled / cat.fields.length) * 100);
   };
 
+  // Contar cuántos campos tiene datos reales (no "(No hay datos)")
+  const getDataCompleteness = c => {
+    let count = 0;
+    Object.values(c).forEach(v => {
+      if (v && v !== "(No hay datos)") count++;
+    });
+    return count;
+  };
+
   // Lista de asesores únicos
   const agents = useMemo(() => {
     const s = new Set();
@@ -772,7 +781,7 @@ function SurveysView({ contactos, llamadas }) {
     return [...s].sort();
   }, [contactos]);
 
-  // Filtrado
+  // Filtrado y ordenado por completitud (primero con más datos)
   const filtered = useMemo(() => {
     return contactos.filter(c => {
       const cats = getCategories(c);
@@ -783,7 +792,7 @@ function SurveysView({ contactos, llamadas }) {
       const phone = (c["Número de teléfono"] || c["Phone"] || "").toLowerCase();
       if (search && !name.includes(search.toLowerCase()) && !phone.includes(search.toLowerCase())) return false;
       return true;
-    });
+    }).sort((a, b) => getDataCompleteness(b) - getDataCompleteness(a)); // Descendente: más datos primero
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contactos, catFilter, agentFilter, search]);
 
