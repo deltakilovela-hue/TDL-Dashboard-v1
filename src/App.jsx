@@ -673,6 +673,356 @@ function ContactsView({ contactos }) {
   );
 }
 
+// ── Surveys View ──────────────────────────────────────────────────────────────
+const SURVEY_CATS = [
+  {
+    id: "primer",
+    label: "🌡️ Primer Contacto",
+    color: "#4A7FA5",
+    fields: [
+      { key: "🌡️ Nivel de interés del prospecto",       label: "Nivel de interés" },
+      { key: "💸 Presupuesto estimado",                  label: "Presupuesto" },
+      { key: "🏦 ¿Cuenta con financiamiento o crédito?", label: "Financiamiento" },
+      { key: "📅 ¿Desea agendar una cita?",              label: "¿Agendar cita?" },
+      { key: "Medio de contacto de preferencia",         label: "Medio de contacto" },
+      { key: "Funciones de LEAD",                        label: "Funciones de LEAD" },
+      { key: "Requiero más tiempo para responder",       label: "Más tiempo" },
+      { key: "Comentario de NOTA primer contacto",       label: "Nota primer contacto" },
+      { key: "Comentario de seguimiento externo",        label: "Seguimiento externo" },
+    ],
+  },
+  {
+    id: "cierre",
+    label: "🎯 Cierre Comercial",
+    color: "#6DB87A",
+    fields: [
+      { key: "¿El prospecto se presentó a la cita?",    label: "¿Se presentó?" },
+      { key: "📊 Nivel de interés después de la cita",  label: "Interés post-cita" },
+      { key: "¿Qué le hace falta para cerrar?",         label: "¿Qué falta?" },
+      { key: "¿Requiere closer u otro equipo?",         label: "¿Requiere closer?" },
+      { key: "📅 Fecha tentativa seguimiento/cierre",   label: "Fecha cierre" },
+      { key: "Comentario NOTA Cierre Comercial",        label: "Nota cierre" },
+      { key: "Necesito más tiempo con el prospecto",    label: "Más tiempo" },
+      { key: "Descartado",                              label: "Descartado" },
+    ],
+  },
+  {
+    id: "rentas",
+    label: "✈️ Rentas Vacacionales",
+    color: "#A478C8",
+    fields: [
+      { key: "Agente de rentas",                       label: "Agente de rentas" },
+      { key: "¿Necesitas algo especial?",              label: "Necesidad especial" },
+      { key: "Número de personas (total)",             label: "Personas (total)" },
+      { key: "¿Cuántos días estarás con nosotros?",   label: "Días de estadía" },
+      { key: "Fecha de visita (rentas)",               label: "Fecha de visita" },
+      { key: "Propiedad seleccionada",                 label: "Propiedad" },
+    ],
+  },
+];
+
+function fmtDuration(secs) {
+  const s = parseInt(secs) || 0;
+  if (s === 0) return "—";
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), r = s % 60;
+  return r > 0 ? `${m}m ${r}s` : `${m}m`;
+}
+
+function SurveysView({ contactos, llamadas }) {
+  const [catFilter, setCatFilter]   = useState("all");
+  const [agentFilter, setAgentFilter] = useState("");
+  const [search, setSearch]         = useState("");
+  const [expanded, setExpanded]     = useState(null);
+  const [page, setPage]             = useState(0);
+  const PER = 15;
+
+  // Agrupar llamadas por Contact Id
+  const callMap = useMemo(() => {
+    const map = {};
+    (llamadas || []).forEach(r => {
+      const cid = r["Contact Id"] || "";
+      if (!cid) return;
+      if (!map[cid]) map[cid] = { total: 0, contestadas: 0, perdidas: 0, durTotal: 0, ultima: "" };
+      const m = map[cid];
+      m.total++;
+      const dur = parseInt(r["Duración (in segundos)"] || 0);
+      const est = (r["Estado de la llamada"] || "").toLowerCase();
+      if (est === "answered" || est.includes("contest")) { m.contestadas++; m.durTotal += dur; }
+      if (est.includes("no answer") || est.includes("missed") || est.includes("busy") || est.includes("perdida")) m.perdidas++;
+      const fecha = r["Creada Activado"] || "";
+      if (fecha && (!m.ultima || fecha > m.ultima)) m.ultima = fecha;
+    });
+    return map;
+  }, [llamadas]);
+
+  // Detectar qué encuestas tiene cada contacto
+  const getCategories = c => SURVEY_CATS.filter(cat => cat.fields.some(f => c[f.key] && c[f.key] !== ""));
+
+  // Calcular completitud de una categoría para un contacto
+  const completeness = (c, cat) => {
+    const filled = cat.fields.filter(f => c[f.key] && c[f.key] !== "").length;
+    return Math.round((filled / cat.fields.length) * 100);
+  };
+
+  // Lista de asesores únicos
+  const agents = useMemo(() => {
+    const s = new Set();
+    contactos.forEach(c => { const a = c["Usuario asignado"] || c["Assigned To"]; if (a && a !== "N/A") s.add(a); });
+    return [...s].sort();
+  }, [contactos]);
+
+  // Filtrado
+  const filtered = useMemo(() => {
+    return contactos.filter(c => {
+      const cats = getCategories(c);
+      if (catFilter !== "all" && !cats.find(cat => cat.id === catFilter)) return false;
+      const agent = c["Usuario asignado"] || c["Assigned To"] || "";
+      if (agentFilter && agent !== agentFilter) return false;
+      const name  = (c["Nombre del Contacto"] || c["First Name"] || "").toLowerCase();
+      const phone = (c["Número de teléfono"] || c["Phone"] || "").toLowerCase();
+      if (search && !name.includes(search.toLowerCase()) && !phone.includes(search.toLowerCase())) return false;
+      return true;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactos, catFilter, agentFilter, search]);
+
+  const handleFilter = v => { setCatFilter(v); setPage(0); setExpanded(null); };
+  const handleAgent  = v => { setAgentFilter(v); setPage(0); setExpanded(null); };
+  const handleSearch = v => { setSearch(v); setPage(0); setExpanded(null); };
+
+  const total = Math.ceil(filtered.length / PER);
+  const rows  = filtered.slice(page * PER, (page + 1) * PER);
+
+  // Contar por categoría
+  const catCounts = useMemo(() => {
+    const counts = { all: contactos.length };
+    SURVEY_CATS.forEach(cat => {
+      counts[cat.id] = contactos.filter(c => cat.fields.some(f => c[f.key] && c[f.key] !== "")).length;
+    });
+    return counts;
+  }, [contactos]);
+
+  if (!contactos.length) return (
+    <div style={{background:"#0A1420",border:`1px solid ${GOLD}22`,borderRadius:16,padding:48,textAlign:"center",color:"#3A5070",fontFamily:MONO,fontSize:12}}>
+      Haz sync con GHL para ver las encuestas por contacto
+    </div>
+  );
+
+  const NIVEL_COLOR = v => {
+    if (!v) return "#5A7090";
+    const l = v.toLowerCase();
+    if (l.includes("alto") || l.includes("caliente")) return "#6DB87A";
+    if (l.includes("medio") || l.includes("tibio"))   return "#C8A84A";
+    if (l.includes("bajo")  || l.includes("frío") || l.includes("frio")) return "#E8824A";
+    return "#A8C0D8";
+  };
+
+  return (
+    <div>
+      <SectionTitle>📋 Encuestas por Contacto</SectionTitle>
+
+      {/* Filtro categoría */}
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        {[{id:"all",label:"Todos",color:GOLD},...SURVEY_CATS].map(cat=>{
+          const active = catFilter === cat.id;
+          return (
+            <button key={cat.id} onClick={()=>handleFilter(cat.id)}
+              style={{background:active?cat.color:"#0f1923",color:active?"#070D14":cat.color||"#8A9BB8",border:`1px solid ${cat.color||GOLD}${active?"":"44"}`,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontFamily:MONO,fontSize:10,fontWeight:active?700:400,transition:"all 0.15s"}}>
+              {cat.label} <span style={{opacity:0.7}}>({catCounts[cat.id]||0})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Filtros asesor + búsqueda */}
+      <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+        <input placeholder="🔍 Buscar nombre o teléfono…" value={search} onChange={e=>handleSearch(e.target.value)}
+          style={{background:"#0f1923",border:"1px solid #1E3050",color:"#F0EAD6",borderRadius:8,padding:"8px 12px",fontFamily:MONO,fontSize:11,outline:"none",minWidth:220,flex:1}}/>
+        <select value={agentFilter} onChange={e=>handleAgent(e.target.value)}
+          style={{background:"#0f1923",border:`1px solid ${agentFilter?GOLD:"#1E3050"}`,color:agentFilter?GOLD:"#8A9BB8",borderRadius:8,padding:"8px 12px",fontFamily:MONO,fontSize:11,cursor:"pointer",outline:"none",minWidth:200}}>
+          <option value="">Todos los asesores</option>
+          {agents.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        {(agentFilter||search)&&<button onClick={()=>{setAgentFilter("");setSearch("");setPage(0);}} style={{background:"#1A2B4A",border:"1px solid #2A3D5A",color:"#A8C0D8",borderRadius:8,padding:"8px 12px",cursor:"pointer",fontFamily:MONO,fontSize:10}}>✕ Limpiar</button>}
+        <span style={{color:"#5A7090",fontFamily:MONO,fontSize:10,marginLeft:"auto"}}>{filtered.length} contacto{filtered.length!==1?"s":""}</span>
+      </div>
+
+      {/* Tabla */}
+      <div style={{background:"#0A1420",border:`1px solid ${GOLD}22`,borderRadius:14,overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:MONO,fontSize:11}}>
+          <thead>
+            <tr style={{background:"#0D1B2A",borderBottom:`1px solid ${GOLD}22`}}>
+              {["Contacto","Asesor Asignado","Encuestas","Dato Principal","📞 Llamadas",""].map(h=>(
+                <th key={h} style={{padding:"10px 14px",textAlign:"left",color:GOLD,fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c, i) => {
+              const globalIdx = page * PER + i;
+              const isExp = expanded === globalIdx;
+              const name  = c["Nombre del Contacto"] || `${c["First Name"]||""} ${c["Last Name"]||""}`.trim() || "—";
+              const agent = c["Usuario asignado"] || c["Assigned To"] || "—";
+              const phone = c["Número de teléfono"] || c["Phone"] || "";
+              const cats  = getCategories(c);
+              const cid   = c["Contact Id"] || "";
+              const calls = callMap[cid] || null;
+              // Dato principal: nivel de interés o propiedad
+              const nivelPrimer = c["🌡️ Nivel de interés del prospecto"] || "";
+              const nivelCierre = c["📊 Nivel de interés después de la cita"] || "";
+              const propiedad   = c["Propiedad seleccionada"] || "";
+              const presupuesto = c["💸 Presupuesto estimado"] || "";
+              const datoPrincipal = nivelPrimer || nivelCierre || propiedad || presupuesto || "—";
+
+              return [
+                <tr key={`row-${globalIdx}`}
+                  onClick={()=>setExpanded(isExp ? null : globalIdx)}
+                  style={{borderBottom:isExp?"none":"1px solid #0D1B2A",cursor:"pointer",transition:"background 0.1s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=`${GOLD}0A`}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <td style={{padding:"10px 14px"}}>
+                    <div style={{color:"#F0EAD6",fontWeight:600}}>{name}</div>
+                    {phone&&<div style={{color:"#3A5070",fontSize:9,marginTop:2}}>{phone}</div>}
+                  </td>
+                  <td style={{padding:"10px 14px",color:"#A8C0D8",fontSize:10,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{agent}</td>
+                  <td style={{padding:"10px 14px"}}>
+                    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                      {cats.length===0
+                        ? <span style={{color:"#2A3D5A",fontSize:9}}>Sin encuestas</span>
+                        : cats.map(cat=>{
+                            const pct = completeness(c, cat);
+                            return (
+                              <div key={cat.id} style={{display:"flex",alignItems:"center",gap:4}}>
+                                <span style={{background:`${cat.color}22`,color:cat.color,borderRadius:5,padding:"2px 7px",fontSize:9,fontWeight:700}}>{cat.label.split(" ")[0]}</span>
+                                <span style={{color:pct>=80?"#6DB87A":pct>=50?"#C8A84A":"#E8824A",fontSize:9,fontWeight:600}}>{pct}%</span>
+                              </div>
+                            );
+                          })
+                      }
+                    </div>
+                  </td>
+                  <td style={{padding:"10px 14px"}}>
+                    {nivelPrimer
+                      ? <span style={{color:NIVEL_COLOR(nivelPrimer),fontSize:10,fontWeight:600}}>{nivelPrimer}</span>
+                      : nivelCierre
+                      ? <span style={{color:NIVEL_COLOR(nivelCierre),fontSize:10,fontWeight:600}}>{nivelCierre}</span>
+                      : <span style={{color:"#5A7090",fontSize:10}}>{datoPrincipal}</span>
+                    }
+                  </td>
+                  <td style={{padding:"10px 14px",whiteSpace:"nowrap"}}>
+                    {calls
+                      ? <div>
+                          <span style={{color:"#F0EAD6",fontWeight:600,fontSize:10}}>{calls.total} intentos</span>
+                          <span style={{color:"#3A5070",fontSize:9,marginLeft:6}}>{fmtDuration(calls.durTotal)}</span>
+                        </div>
+                      : <span style={{color:"#2A3D5A",fontSize:9}}>Sin llamadas</span>
+                    }
+                  </td>
+                  <td style={{padding:"10px 14px",textAlign:"center",color:"#3A5070",fontSize:11}}>
+                    {isExp ? "▲" : "▼"}
+                  </td>
+                </tr>,
+
+                isExp && (
+                  <tr key={`exp-${globalIdx}`}>
+                    <td colSpan={6} style={{padding:"0 12px 14px",background:"#060C14",borderBottom:"1px solid #0D1B2A"}}>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12,paddingTop:12}}>
+
+                        {/* Panel Encuestas */}
+                        {SURVEY_CATS.map(cat => {
+                          const hasAny = cat.fields.some(f => c[f.key] && c[f.key] !== "");
+                          if (!hasAny) return null;
+                          const pct = completeness(c, cat);
+                          return (
+                            <div key={cat.id} style={{background:"#0A1420",border:`1px solid ${cat.color}33`,borderRadius:10,padding:"12px 14px"}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                                <span style={{color:cat.color,fontFamily:MONO,fontSize:10,fontWeight:700}}>{cat.label}</span>
+                                <span style={{color:pct>=80?"#6DB87A":pct>=50?"#C8A84A":"#E8824A",fontFamily:MONO,fontSize:9,fontWeight:600}}>{pct}% completado</span>
+                              </div>
+                              {cat.fields.map(f => {
+                                const val = c[f.key] || "";
+                                if (!val) return null;
+                                return (
+                                  <div key={f.key} style={{marginBottom:6}}>
+                                    <div style={{color:"#3A5070",fontFamily:MONO,fontSize:8,textTransform:"uppercase",letterSpacing:0.5,marginBottom:1}}>{f.label}</div>
+                                    <div style={{color:"#C8D8E8",fontFamily:MONO,fontSize:10,wordBreak:"break-word",lineHeight:1.4}}>{val}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+
+                        {/* Panel Llamadas */}
+                        <div style={{background:"#0A1420",border:"1px solid #1E3050",borderRadius:10,padding:"12px 14px"}}>
+                          <div style={{color:"#A8C0D8",fontFamily:MONO,fontSize:10,fontWeight:700,marginBottom:10}}>📞 LLAMADAS</div>
+                          {calls ? (
+                            <>
+                              <div style={{marginBottom:6}}>
+                                <div style={{color:"#3A5070",fontFamily:MONO,fontSize:8,textTransform:"uppercase",letterSpacing:0.5,marginBottom:1}}>Total intentos</div>
+                                <div style={{color:"#F0EAD6",fontFamily:MONO,fontSize:13,fontWeight:700}}>{calls.total}</div>
+                              </div>
+                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
+                                <div>
+                                  <div style={{color:"#3A5070",fontFamily:MONO,fontSize:8,letterSpacing:0.5,marginBottom:1}}>Contestadas</div>
+                                  <div style={{color:"#6DB87A",fontFamily:MONO,fontSize:11,fontWeight:600}}>✓ {calls.contestadas} ({calls.total>0?Math.round(calls.contestadas/calls.total*100):0}%)</div>
+                                </div>
+                                <div>
+                                  <div style={{color:"#3A5070",fontFamily:MONO,fontSize:8,letterSpacing:0.5,marginBottom:1}}>Perdidas</div>
+                                  <div style={{color:"#E8824A",fontFamily:MONO,fontSize:11,fontWeight:600}}>✗ {calls.perdidas} ({calls.total>0?Math.round(calls.perdidas/calls.total*100):0}%)</div>
+                                </div>
+                              </div>
+                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
+                                <div>
+                                  <div style={{color:"#3A5070",fontFamily:MONO,fontSize:8,letterSpacing:0.5,marginBottom:1}}>Duración total</div>
+                                  <div style={{color:"#7DB8D4",fontFamily:MONO,fontSize:11,fontWeight:600}}>{fmtDuration(calls.durTotal)}</div>
+                                </div>
+                                <div>
+                                  <div style={{color:"#3A5070",fontFamily:MONO,fontSize:8,letterSpacing:0.5,marginBottom:1}}>Promedio</div>
+                                  <div style={{color:"#7DB8D4",fontFamily:MONO,fontSize:11,fontWeight:600}}>{calls.contestadas>0?fmtDuration(Math.round(calls.durTotal/calls.contestadas)):"—"}</div>
+                                </div>
+                              </div>
+                              {calls.ultima&&(
+                                <div>
+                                  <div style={{color:"#3A5070",fontFamily:MONO,fontSize:8,letterSpacing:0.5,marginBottom:1}}>Última llamada</div>
+                                  <div style={{color:"#8A9BB8",fontFamily:MONO,fontSize:10}}>{calls.ultima}</div>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div style={{color:"#2A3D5A",fontFamily:MONO,fontSize:10,paddingTop:4}}>Sin llamadas registradas</div>
+                          )}
+                        </div>
+
+                      </div>
+                    </td>
+                  </tr>
+                ),
+              ];
+            })}
+          </tbody>
+        </table>
+
+        {/* Paginación */}
+        {total > 1 && (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",borderTop:"1px solid #0D1B2A"}}>
+            <span style={{color:"#5A7090",fontFamily:MONO,fontSize:9}}>Página {page+1} de {total} · {filtered.length} contactos</span>
+            <div style={{display:"flex",gap:4}}>
+              <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={page===0} style={{background:page===0?"#070D14":"#0f1923",border:"1px solid #1E3050",color:page===0?"#2A3D5A":"#A8C0D8",borderRadius:6,padding:"4px 10px",cursor:page===0?"default":"pointer",fontFamily:MONO,fontSize:10}}>‹</button>
+              {Array.from({length:Math.min(7,total)},(_,idx)=>{
+                const p=total<=7?idx:Math.max(0,Math.min(total-7,page-3))+idx;
+                return <button key={p} onClick={()=>setPage(p)} style={{background:p===page?GOLD:"#0f1923",color:p===page?NAVY:"#8A9BB8",border:`1px solid ${p===page?GOLD:"#1E3050"}`,borderRadius:6,padding:"4px 9px",cursor:"pointer",fontFamily:MONO,fontSize:10,fontWeight:p===page?700:400}}>{p+1}</button>;
+              })}
+              <button onClick={()=>setPage(p=>Math.min(total-1,p+1))} disabled={page===total-1} style={{background:page===total-1?"#070D14":"#0f1923",border:"1px solid #1E3050",color:page===total-1?"#2A3D5A":"#A8C0D8",borderRadius:6,padding:"4px 10px",cursor:page===total-1?"default":"pointer",fontFamily:MONO,fontSize:10}}>›</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Date Filter Bar ───────────────────────────────────────────────────────────
 function DateFilterBar({ filter, setFilter, datasets }) {
   const months = useMemo(() => {
@@ -1613,6 +1963,7 @@ function ReportDashboard({report,prevReport}) {
     {id:"llamadas",label:"📞 Llamadas"},
     {id:"mensajes",label:"💬 Mensajes"},
     {id:"contactos",label:"👤 Contactos"},
+    {id:"encuestas",label:"📋 Encuestas"},
     {id:"leads",label:"🚨 LEADS"},
   ];
 
@@ -1673,6 +2024,7 @@ function ReportDashboard({report,prevReport}) {
           {activeTab==="llamadas"&&<><SectionTitle>📞 Llamadas Salientes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={llamadasPorAgente} dataKey="value" nameKey="name" color={GOLD}/><PiePanel title="Estado" data={estadoLlamadas}/></div>{llamadas.length>0&&<DataTable title="Detalle" rows={llamadas.map(r=>({...r,"Duración":parseInt(r["Duración (in segundos)"]||0)>0?`${r["Duración (in segundos)"]}s`:"—"}))} cols={["Nombre del Contacto","Llamar realizada Vía","Duración","Estado de la llamada"]}/>}</>}
           {activeTab==="mensajes"&&<><SectionTitle>💬 Mensajes</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}><ChartPanel title="Por Agente" data={mensajesPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>{canalDist.length>0&&<PiePanel title="Canal" data={canalDist}/>}</div>{mensajes.length>0&&<DataTable title="Detalle" rows={mensajes} cols={["Nombre del Contacto","Mensajes no leídos","Asignado a","Tipo","Canal del último Mensaje"]}/>}</>}
           {activeTab==="contactos"&&<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><ChartPanel title="Contactos por Asesor" data={contactosPorAgente} dataKey="value" nameKey="name" color={GOLD}/>{interesDist.length>0&&<PiePanel title="🌡️ Nivel de Interés" data={interesDist}/>}</div><ContactsView contactos={datasets?.contactos||[]}/></>}
+          {activeTab==="encuestas"&&<SurveysView contactos={datasets?.contactos||[]} llamadas={datasets?.llamadas||[]}/>}
           {activeTab==="leads"&&<><SectionTitle>🚨 LEADS</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{leadsPorStage.length>0&&<ChartPanel title="Por Etapa" data={leadsPorStage} dataKey="value" nameKey="name" color="#E8824A"/>}{leadsPorAgente.length>0&&<ChartPanel title="Por Agente" data={leadsPorAgente} dataKey="value" nameKey="name" color="#4A7FA5"/>}</div>{leads.length>0&&<DataTable title="Detalle" rows={leads} cols={["Primary Contact Name","Assigned User","Pipeline Name","Stage","🌡️ Nivel de interés del prospecto","💸 Presupuesto estimado","🏦 ¿Cuenta con financiamiento o crédito?","Días Asignado","Source"]}/>}</>}
           {activeTab==="presupuestos"&&<><SectionTitle>💰 Presupuestos</SectionTitle><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>{interesDist.length>0&&<PiePanel title="Nivel de Interés" data={interesDist}/>}{charts.contactosPorMedio&&<PiePanel title="Por Medio" data={charts.contactosPorMedio}/>}</div>{presupuestos.length>0&&<DataTable title="Detalle" rows={presupuestos} cols={["identificador_presupuesto","Presupuesto","Nivel_interes","Owner","Created On"]}/>}</>}
         </>}
