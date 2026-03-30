@@ -1,6 +1,6 @@
 // Vercel Serverless Function: GET /api/sync
 // Descarga contactos, conversaciones, usuarios y oportunidades de GHL.
-// Las credenciales van como variables de entorno en Vercel → Settings → Environment Variables.
+// Plan: Starter. Campos específicos solicitados por usuario.
 
 const GHL_HEADERS = () => ({
   Authorization: `Bearer ${process.env.GHL_API_KEY}`,
@@ -26,7 +26,7 @@ async function fetchUserMap(locationId) {
     const data = await ghlGet("/users/", { locationId });
     const map = {};
     (data.users || []).forEach((u) => {
-      if (u.id) map[u.id] = u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim();
+      if (u.id) map[u.id] = u.name || `${u.firstName || ""}${u.lastName ? " " + u.lastName : ""}`.trim() || "(No hay datos)";
     });
     return map;
   } catch (e) {
@@ -35,13 +35,13 @@ async function fetchUserMap(locationId) {
   }
 }
 
-// ── Fetch opportunities → { contactId: { pipeline, stage, status } } ──────────
+// ── Fetch opportunities → { contactId: { pipeline, stage, status, value } } ────
 async function fetchOpportunityMap(locationId) {
   const map = {};
   let startAfterId = null;
   const PRIORITY = ["01 - Desarrollos", "02 - Cierre", "Rentas Vacacionales"];
 
-  for (let page = 0; page < 30; page++) {
+  for (let page = 0; page < 20; page++) {
     try {
       const data = await ghlGet("/opportunities/search", {
         location_id: locationId,
@@ -53,11 +53,11 @@ async function fetchOpportunityMap(locationId) {
       opps.forEach((opp) => {
         const contactId = opp.contactId || opp.contact?.id;
         if (!contactId) return;
-        const pipelineName = opp.pipeline?.name || opp.pipelineName || "";
-        const stageName    = opp.pipelineStage?.name || opp.pipelineStageName || opp.name || "";
+        const pipelineName = opp.pipeline?.name || opp.pipelineName || "(No hay datos)";
+        const stageName    = opp.pipelineStage?.name || opp.pipelineStageName || opp.name || "(No hay datos)";
+        const value        = opp.value || "(No hay datos)";
         const status       = opp.status || "open";
 
-        // Descartar "Seguimiento IA" — no debe aparecer como oportunidad principal
         if (pipelineName === "Seguimiento IA") return;
 
         const current = map[contactId];
@@ -67,13 +67,13 @@ async function fetchOpportunityMap(locationId) {
         if (!current ||
             (isMainPipeline && !currentIsMain) ||
             (isMainPipeline && currentIsMain && status === "open" && current.status !== "open")) {
-          map[contactId] = { pipeline: pipelineName, stage: stageName, status };
+          map[contactId] = { pipeline: pipelineName, stage: stageName, value, status };
         }
       });
 
       const nextId = data.meta?.startAfterId;
       if (opps.length < 100 || !nextId) break;
-      startAfterId = opps[opps.length - 1].id;
+      startAfterId = nextId;
     } catch (e) {
       console.warn("⚠️ fetchOpportunityMap page", page, e.message);
       break;
@@ -82,8 +82,7 @@ async function fetchOpportunityMap(locationId) {
   return map;
 }
 
-// ── Fetch custom field definitions → { id|fieldKey: displayName } ────────────
-// Permite mapear campos personalizados de GHL por su nombre visible real
+// ── Fetch custom field definitions ─────────────────────────────────────────────
 async function fetchCustomFieldMap(locationId) {
   try {
     const data = await ghlGet(`/locations/${locationId}/customFields`);
@@ -104,7 +103,7 @@ async function fetchCustomFieldMap(locationId) {
   }
 }
 
-// ── Fetch contacts (paginado, máx 20 páginas = 2000 contactos) ───────────────
+// ── Fetch contacts (paginado, máx 20 páginas = 2000 contactos) ────────────────
 async function fetchContacts(locationId) {
   const all = [];
   let startAfterId = null;
@@ -130,7 +129,7 @@ async function fetchContacts(locationId) {
   return all;
 }
 
-// ── Fetch conversations (paginado, máx 1000) ──────────────────────────────────
+// ── Fetch conversations (paginado, máx 10 páginas = 1000) ────────────────────
 async function fetchConversations(locationId) {
   const all = [];
   let startAfterId = null;
@@ -147,105 +146,10 @@ async function fetchConversations(locationId) {
   return all;
 }
 
-// ── Normaliza contacto con nombres de columna del CSV de GHL ─────────────────
-function normalizeContact(c, userMap, oppMap, cfMap = {}) {
-  const custom = {};
-  (c.customField || []).forEach((f) => {
-    const val = f.value ?? "";
-    // Guardar por ID y fieldKey (para backward compat)
-    if (f.id)       custom[f.id] = val;
-    if (f.fieldKey) {
-      custom[f.fieldKey] = val;
-      custom[f.fieldKey.replace(/^contact\./, "")] = val;
-    }
-    // Guardar por nombre visible usando cfMap (fuente de verdad de GHL)
-    const displayName = (f.id && cfMap[f.id]) || (f.fieldKey && cfMap[f.fieldKey]) ||
-                        (f.fieldKey && cfMap[f.fieldKey.replace(/^contact\./, "")]) || "";
-    if (displayName) custom[displayName] = val;
-  });
-
-  const fullName = c.contactName || `${c.firstName || ""} ${c.lastName || ""}`.trim();
-  // Resuelve ID de usuario → nombre real
-  const ownerName = c.ownerName || userMap[c.assignedTo] || c.assignedTo || "";
-  const created   = c.dateAdded || c.createdAt || "";
-  const tags      = Array.isArray(c.tags) ? c.tags.join(", ") : (c.tags || "");
-
-  // Pipeline/Stage: del mapa de oportunidades (más completo que el campo de contacto)
-  const opp       = oppMap[c.id] || {};
-  const pipeline  = opp.pipeline || c.pipelineName || "";
-  const stage     = opp.stage    || c.pipelineStage || c.pipelineStageName || "";
-  const oppStatus = opp.status   || "open";
-
-  return {
-    "Contact Id":    c.id || "",
-    "First Name":    c.firstName || "",
-    "Last Name":     c.lastName || "",
-    "Phone":         c.phone || "",
-    "Email":         c.email || "",
-    "Business Name": c.companyName || "",
-    "Created":       created,
-    "Last Activity": c.lastActivityDate || "",
-    "Tags":          tags,
-    "Source":        c.source || "",
-    "Contact Type":  c.type || "lead",
-    "Assigned To":   ownerName,
-    "Updated":       c.dateUpdated || "",
-    "Opportunities": pipeline && stage ? `${oppStatus}: ${pipeline} - ${stage}` : "",
-    "Días Asignado": created ? Math.floor((Date.now() - new Date(typeof created === "number" ? (created > 1e10 ? created : created * 1000) : created).getTime()) / 86400000) : "",
-    "Last Note":     c.lastNote || "",
-    // ── Encuesta de Primer Contacto ──────────────────────────────────────────
-    "🌡️ Nivel de interés del prospecto":        custom["_nivel_de_interes_del_prospecto"] || custom["nivel_de_interes_del_prospecto"] || "",
-    "💸 Presupuesto estimado":                  custom["_presupuesto_estimado"] || custom["presupuesto_estimado"] || "",
-    "🏦 ¿Cuenta con financiamiento o crédito?": custom["_cuenta_con_financiamiento_o_credito"] || custom["cuenta_con_financiamiento_o_credito"] || "",
-    "📅 ¿Desea agendar una cita?":              custom["_desea_agendar_una_cita"] || custom["desea_agendar_una_cita"] || "",
-    "Comentario de NOTA primer contacto":       custom["comentario_de_nota_seguimiento_frio_"] || custom["comentario_de_nota_primer_contacto"] || "",
-    "Medio de contacto de preferencia":         custom["medio_de_contacto_de_preferencia"] || "",
-    "Requiero más tiempo para responder":       custom["requiero_mas_tiempo_para_responder"] || "",
-    "Funciones de LEAD":                        custom["funciones_de_lead"] || "",
-    // ── Seguimiento Externo ───────────────────────────────────────────────────
-    "Comentario de seguimiento externo":        custom["comentario_de_seguimiento_externo"] || "",
-    "📷 Capturas de pantalla (seguimiento)":    custom["capturas_de_pantalla_seguimiento_externo"] || "",
-    // ── Encuesta de Cierre Comercial ──────────────────────────────────────────
-    "Comentario NOTA Cierre Comercial":         custom["comentario_nota_cita_por_confirmar"] || "",
-    "¿El prospecto se presentó a la cita?":     custom["_el_prospecto_se_presento_a_la_cita"] || "",
-    "📊 Nivel de interés después de la cita":   custom["_nivel_de_interes_despues_de_la_cita"] || "",
-    "🍷 Tipo de cita":                          custom["_tipo_de_cita"] || "",
-    "¿Qué le hace falta para cerrar?":          custom["_que_le_hace_falta_para_cerrar_la_operacion"] || "",
-    "¿Requiere closer u otro equipo?":          custom["_requiere_intervencion_de_un_closer_u_otro_equipo"] || "",
-    "📅 Fecha tentativa seguimiento/cierre":    custom["_fecha_tentativa_de_seguimientocierre"] || "",
-    "Necesito más tiempo con el prospecto":     custom["necesito_mas_tiempo_con_el_prospecto"] || "",
-    "Descartado":                               custom["descartado_"] || "",
-    // ── Rentas Vacacionales Formulario ────────────────────────────────────────
-    "Agente de rentas":                         custom["agente_de_rentas"] || "",
-    "¿Necesitas algo especial?":                custom["necesidad_especial_rentasvacionales"] || "",
-    "Número de personas (total)":               custom["numero_de_personas_total_rentasvacionales"] || custom["numero_de_personas_total"] || "",
-    "¿Cuántos días estarás con nosotros?":      custom["numero_dias_estadia_rentasvacionales"] || "",
-    "Fecha de visita (rentas)":                 custom["fecha_de_visita_rentasvacionales"] || "",
-    "Propiedad seleccionada":                   custom["propiedad_seleccionada"] || custom["propiedad"] || "",
-    // ── Otros campos personalizados ───────────────────────────────────────────
-    "¿Dónde te gustaria invertir?":             custom["donde_te_gustaria_invertir"] || custom["donde_invertir"] || "",
-    "¿En que te gustaria invertir?":            custom["en_que_te_gustaria_invertir"] || custom["en_que_invertir"] || "",
-    "Historial de NOTAS para clientes":         custom["historial_de_notas_para_clientes"] || "",
-    "Turno de asignación":                      custom["turno_de_asignacion"] || "",
-    "Fecha de visita":                          custom["fecha_de_visita"] || "",
-    // Columnas compatibles con el dashboard
-    "Nombre del Contacto": fullName,
-    "Número de teléfono":  c.phone || "",
-    "Usuario asignado":    ownerName,
-    "Created On":          created,
-    "Pipeline":            pipeline,
-    "Pipeline Name":       pipeline,
-    "Stage":               stage,
-    "{{contact.suma_de_notas_de_agente}}": custom["suma_de_notas_de_agente"] || "0",
-    ...custom,
-  };
-}
-
-// ── Detecta si una conversación es una llamada telefónica ─────────────────────
+// ── Detecta si una conversación es una llamada telefónica ──────────────────────
 function isCallConversation(c) {
   const type    = String(c.type || "").toLowerCase();
   const channel = String(c.lastMessageChannel || c.lastMessageType || "").toLowerCase();
-  // GHL usa TYPE_PHONE (6), "phone", "call", "TYPE_CALL", etc.
   return type === "type_phone" || type === "phone" || type === "6" ||
          channel === "call" || channel === "phone_call" || channel === "type_call" ||
          channel.includes("call") || channel.includes("phone");
@@ -255,76 +159,176 @@ function isCallConversation(c) {
 async function fetchCallMessages(convId) {
   try {
     const data = await ghlGet(`/conversations/${convId}/messages`, { limit: "20" });
-    // GHL puede devolver { messages: [...] } o { messages: { messages: [...] } }
     const msgs = Array.isArray(data.messages) ? data.messages
                : Array.isArray(data.messages?.messages) ? data.messages.messages : [];
+
+    // Buscar el mensaje de llamada
     const callMsg = msgs.find(m => m.meta?.callDuration !== undefined) ||
                     msgs.find(m => m.messageType === "TYPE_CALL" || m.type === 10);
+
     if (!callMsg) return null;
+
     return {
-      duration: parseInt(callMsg.meta?.callDuration || 0),
-      status:   callMsg.meta?.callStatus || callMsg.meta?.status || null,
+      id: callMsg.id || "",
+      body: callMsg.body || "(No hay datos)",
+      direction: callMsg.direction || "(No hay datos)",
+      type: callMsg.messageType || callMsg.type || "(No hay datos)",
+      callDuration: parseInt(callMsg.meta?.callDuration || 0),
+      callStatus: callMsg.meta?.callStatus || "(No hay datos)",
+      callRecording: callMsg.meta?.callRecording || "(No hay datos)",
     };
   } catch {
     return null;
   }
 }
 
-// ── Normaliza llamada (conversación de tipo llamada) ─────────────────────────
-function normalizeLlamada(c, userMap, detail = null) {
-  const agentName = userMap[c.assignedTo] || c.ownerName || c.assignedTo || "";
-  // Intentar inferir estado: si hay mensajes sin leer de entrada → posiblemente perdida
-  const direction = String(c.lastMessageDirection || "").toLowerCase();
-  const unread    = c.unreadCount || 0;
-  let status = "Answered";
-  if (unread > 0 && direction === "inbound") status = "No Answer";
-  else if (direction === "inbound") status = "Answered";
-  // Si el lastMessageBody contiene "missed" o "no answer"
-  const body = String(c.lastMessageBody || "").toLowerCase();
-  if (body.includes("missed") || body.includes("no answer") || body.includes("no contestada")) {
-    status = "No Answer";
-  } else if (body.includes("answered") || body.includes("completed") || body.includes("contestada")) {
-    status = "Answered";
-  }
-
-  // Duración: intentar extraer del body si contiene número de segundos
-  let duration = "0";
-  const durMatch = body.match(/(\d+)\s*(seg|sec|s\b|second)/i) ||
-                   body.match(/duration[:\s]+(\d+)/i);
-  if (durMatch) duration = durMatch[1];
-
-  // Sobreescribir con datos reales de los mensajes de la conversación (si disponibles)
-  if (detail) {
-    if (detail.duration > 0) duration = String(detail.duration);
-    if (detail.status) {
-      const st = detail.status.toLowerCase();
-      if (st === "completed" || st === "answered") status = "Answered";
-      else if (st === "no-answer" || st === "busy" || st === "failed" || st === "canceled") status = "No Answer";
+// ── NORMALIZAR: Contacto (campos solicitados) ──────────────────────────────────
+function normalizeContact(c, userMap, oppMap, cfMap = {}) {
+  const custom = {};
+  (c.customField || []).forEach((f) => {
+    const val = f.value ?? "";
+    if (f.id)       custom[f.id] = val;
+    if (f.fieldKey) {
+      custom[f.fieldKey] = val;
+      custom[f.fieldKey.replace(/^contact\./, "")] = val;
     }
-  }
+    const displayName = (f.id && cfMap[f.id]) || (f.fieldKey && cfMap[f.fieldKey]) ||
+                        (f.fieldKey && cfMap[f.fieldKey.replace(/^contact\./, "")]) || "";
+    if (displayName) custom[displayName] = val;
+  });
+
+  const opp = oppMap[c.id] || {};
+  const pipelineName = opp.pipeline || "(No hay datos)";
+  const pipelineStage = opp.stage || "(No hay datos)";
 
   return {
-    "Nombre del Contacto":    c.contactName || c.fullName || "",
-    "Llamar realizada Vía":   agentName,
-    "Duración (in segundos)": duration,
-    "Estado de la llamada":   status,
-    "Creada Activado":        c.dateCreated || c.dateUpdated || "",
-    "Contact Id":             c.contactId || "",
+    // CAMPOS SOLICITADOS
+    "ID": c.id || "(No hay datos)",
+    "First Name": c.firstName || "(No hay datos)",
+    "Last Name": c.lastName || "(No hay datos)",
+    "Phone": c.phone || "(No hay datos)",
+    "Source": c.source || "(No hay datos)",
+    "Status": c.status || "(No hay datos)",
+    "Date Added": c.dateAdded || "(No hay datos)",
+    "Date Updated": c.dateUpdated || "(No hay datos)",
+    "Last Activity Date": c.lastActivityDate || "(No hay datos)",
+    "Assigned To": c.assignedTo ? (userMap[c.assignedTo] || c.assignedTo) : "(No hay datos)",
+    "Owner Name": c.ownerName || userMap[c.assignedTo] || "(No hay datos)",
+    "Tags": Array.isArray(c.tags) ? (c.tags.join(", ") || "(No hay datos)") : (c.tags || "(No hay datos)"),
+    "Unread Count": c.unreadCount || "0",
+    "Pipeline Name": pipelineName,
+    "Pipeline Stage": pipelineStage,
+
+    // CUSTOM FIELDS (encuestas)
+    "🌡️ Nivel de interés del prospecto": custom["_nivel_de_interes_del_prospecto"] || custom["nivel_de_interes_del_prospecto"] || "(No hay datos)",
+    "💸 Presupuesto estimado": custom["_presupuesto_estimado"] || custom["presupuesto_estimado"] || "(No hay datos)",
+    "🏦 ¿Cuenta con financiamiento o crédito?": custom["_cuenta_con_financiamiento_o_credito"] || custom["cuenta_con_financiamiento_o_credito"] || "(No hay datos)",
+    "📅 ¿Desea agendar una cita?": custom["_desea_agendar_una_cita"] || custom["desea_agendar_una_cita"] || "(No hay datos)",
+    "Comentario de NOTA primer contacto": custom["comentario_de_nota_seguimiento_frio_"] || custom["comentario_de_nota_primer_contacto"] || "(No hay datos)",
+    "Medio de contacto de preferencia": custom["medio_de_contacto_de_preferencia"] || "(No hay datos)",
+    "Requiero más tiempo para responder": custom["requiero_mas_tiempo_para_responder"] || "(No hay datos)",
+    "Funciones de LEAD": custom["funciones_de_lead"] || "(No hay datos)",
+    "Comentario de seguimiento externo": custom["comentario_de_seguimiento_externo"] || "(No hay datos)",
+
+    // CIERRE COMERCIAL
+    "¿El prospecto se presentó a la cita?": custom["_el_prospecto_se_presento_a_la_cita"] || "(No hay datos)",
+    "📊 Nivel de interés después de la cita": custom["_nivel_de_interes_despues_de_la_cita"] || "(No hay datos)",
+    "¿Qué le hace falta para cerrar?": custom["_que_le_hace_falta_para_cerrar_la_operacion"] || "(No hay datos)",
+    "¿Requiere closer u otro equipo?": custom["_requiere_intervencion_de_un_closer_u_otro_equipo"] || "(No hay datos)",
+    "📅 Fecha tentativa seguimiento/cierre": custom["_fecha_tentativa_de_seguimientocierre"] || "(No hay datos)",
+    "Comentario NOTA Cierre Comercial": custom["comentario_nota_cita_por_confirmar"] || "(No hay datos)",
+    "Necesito más tiempo con el prospecto": custom["necesito_mas_tiempo_con_el_prospecto"] || "(No hay datos)",
+    "Descartado": custom["descartado_"] || "(No hay datos)",
+
+    // RENTAS VACACIONALES
+    "Agente de rentas": custom["agente_de_rentas"] || "(No hay datos)",
+    "¿Necesitas algo especial?": custom["necesidad_especial_rentasvacionales"] || "(No hay datos)",
+    "Número de personas (total)": custom["numero_de_personas_total_rentasvacionales"] || custom["numero_de_personas_total"] || "(No hay datos)",
+    "¿Cuántos días estarás con nosotros?": custom["numero_dias_estadia_rentasvacionales"] || "(No hay datos)",
+    "Fecha de visita (rentas)": custom["fecha_de_visita_rentasvacionales"] || "(No hay datos)",
+    "Propiedad seleccionada": custom["propiedad_seleccionada"] || custom["propiedad"] || "(No hay datos)",
+
+    // COMPATIBILIDAD LEGACY (para App.jsx y dashboard)
+    "Contact Id": c.id || "(No hay datos)",
+    "Nombre del Contacto": `${c.firstName || ""} ${c.lastName || ""}`.trim() || "(No hay datos)",
+    "Número de teléfono": c.phone || "(No hay datos)",
+    "Usuario asignado": c.ownerName || userMap[c.assignedTo] || "(No hay datos)",
+    "Assigned To": c.ownerName || userMap[c.assignedTo] || "(No hay datos)",
+    "Pipeline": pipelineName,
+    "Pipeline Name": pipelineName,
+    "Stage": pipelineStage,
+    "Primary Contact Name": `${c.firstName || ""} ${c.lastName || ""}`.trim() || "(No hay datos)",
+    "Assigned User": c.ownerName || userMap[c.assignedTo] || "(No hay datos)",
+    "Email": c.email || "(No hay datos)",
+    "Created On": c.dateAdded || "(No hay datos)",
+    "Updated": c.dateUpdated || "(No hay datos)",
+    "Last Activity": c.lastActivityDate || "(No hay datos)",
+    "Days Assigned": Math.floor((Date.now() - new Date(c.dateAdded || Date.now()).getTime()) / 86400000),
+    "Opportunities": opp.pipeline && opp.stage ? `${opp.status}: ${opp.pipeline} - ${opp.stage}` : "(No hay datos)",
+    ...custom,
   };
 }
 
-// ── Normaliza conversación con nombres de usuario resueltos ──────────────────
+// ── NORMALIZAR: Conversación (campos solicitados) ────────────────────────────────
 function normalizeConversation(c, userMap) {
-  const ownerName = userMap[c.assignedTo] || c.ownerName || c.assignedTo || "";
   return {
-    "Nombre del Contacto":          c.contactName || c.fullName || "",
-    "Mensajes no leídos":           String(c.unreadCount || 0),
-    "Asignado a":                   ownerName,
-    "Tipo":                         (c.unreadCount || 0) > 0 ? "Unread" : "Read",
-    "Dirección del último mensaje": c.lastMessageDirection || "",
-    "Canal del último Mensaje":     c.lastMessageChannel || c.lastMessageType || c.type || "",
-    "Creada Activado":              c.dateCreated || c.dateUpdated || "",
-    "Contact Id":                   c.contactId || "",
+    // CAMPOS SOLICITADOS
+    "ID": c.id || "(No hay datos)",
+    "Contact ID": c.contactId || "(No hay datos)",
+    "Last Message Date": c.lastMessageDate || c.dateUpdated || "(No hay datos)",
+    "Unread Count": c.unreadCount || "0",
+    "Date Updated": c.dateUpdated || "(No hay datos)",
+
+    // COMPATIBILIDAD LEGACY (para App.jsx)
+    "Contact Id": c.contactId || "(No hay datos)",
+    "Nombre del Contacto": c.contactName || c.fullName || "(No hay datos)",
+    "Mensajes no leídos": String(c.unreadCount || 0),
+    "Asignado a": c.assignedTo ? (userMap[c.assignedTo] || c.assignedTo) : "(No hay datos)",
+    "Tipo": (c.unreadCount || 0) > 0 ? "Unread" : "Read",
+    "Dirección del último mensaje": c.lastMessageDirection || "(No hay datos)",
+    "Canal del último Mensaje": c.lastMessageChannel || c.lastMessageType || c.type || "(No hay datos)",
+    "Creada Activado": c.dateCreated || c.dateUpdated || "(No hay datos)",
+  };
+}
+
+// ── NORMALIZAR: Mensaje Individual / Llamada (campos solicitados) ────────────────
+function normalizeCallMessage(msg, contact) {
+  return {
+    // CAMPOS SOLICITADOS
+    "ID": msg.id || "(No hay datos)",
+    "Body": msg.body || "(No hay datos)",
+    "Direction": msg.direction || "(No hay datos)",
+    "Type": msg.type || "(No hay datos)",
+    "Call Duration": msg.callDuration || "0",
+    "Call Status": msg.callStatus || "(No hay datos)",
+    "Call Recording": msg.callRecording || "(No hay datos)",
+
+    // COMPATIBILIDAD LEGACY (para App.jsx)
+    "Nombre del Contacto": contact.contactName || "(No hay datos)",
+    "Llamar realizada Vía": contact.ownerName || "(No hay datos)",
+    "Duración (in segundos)": msg.callDuration || "0",
+    "Estado de la llamada": msg.callStatus === "completed" ? "Answered" : msg.callStatus === "no-answer" || msg.callStatus === "missed" ? "No Answer" : msg.callStatus || "Answered",
+    "Creada Activado": contact.dateCreated || "(No hay datos)",
+    "Contact Id": contact.contactId || "(No hay datos)",
+  };
+}
+
+// ── NORMALIZAR: Usuario (campos solicitados) ───────────────────────────────────
+function normalizeUser(u) {
+  return {
+    "ID": u.id || "(No hay datos)",
+    "First Name": u.firstName || "(No hay datos)",
+    "Last Name": u.lastName || "(No hay datos)",
+  };
+}
+
+// ── NORMALIZAR: Oportunidad (campos solicitados) ────────────────────────────────
+function normalizeOpportunity(opp) {
+  return {
+    "ID": opp.id || "(No hay datos)",
+    "Pipeline": opp.pipeline?.name || opp.pipelineName || "(No hay datos)",
+    "Pipeline Stage": opp.pipelineStage?.name || opp.pipelineStageName || "(No hay datos)",
+    "Value": opp.value || "(No hay datos)",
   };
 }
 
@@ -341,22 +345,45 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Descarga en paralelo: contactos, conversaciones, usuarios, oportunidades y campos personalizados
-    const [rawContacts, rawConversations, userMap, oppMap, cfMap] = await Promise.all([
+    // Descargas en paralelo
+    const [rawContacts, rawConversations, rawUsers, rawOpps, cfMap] = await Promise.all([
       fetchContacts(LOCATION_ID),
       fetchConversations(LOCATION_ID).catch(() => []),
-      fetchUserMap(LOCATION_ID).catch(() => ({})),
-      fetchOpportunityMap(LOCATION_ID).catch(() => ({})),
+      ghlGet("/users/", { locationId: LOCATION_ID }).then(d => d.users || []).catch(() => []),
+      ghlGet("/opportunities/search", { location_id: LOCATION_ID, limit: "100" }).then(d => d.opportunities || []).catch(() => []),
       fetchCustomFieldMap(LOCATION_ID).catch(() => ({})),
     ]);
 
-    const contacts = rawContacts.map((c) => normalizeContact(c, userMap, oppMap, cfMap));
+    // Construir mapas
+    const userMap = {};
+    rawUsers.forEach(u => {
+      if (u.id) userMap[u.id] = `${u.firstName || ""}${u.lastName ? " " + u.lastName : ""}`.trim() || "(No hay datos)";
+    });
 
-    // Separar conversaciones de tipo llamada vs mensajes
+    const oppMap = {};
+    const PRIORITY = ["01 - Desarrollos", "02 - Cierre", "Rentas Vacacionales"];
+    rawOpps.forEach(opp => {
+      const contactId = opp.contactId;
+      if (!contactId) return;
+      const pipelineName = opp.pipeline?.name || "(No hay datos)";
+      if (pipelineName === "Seguimiento IA") return;
+      const stageName = opp.pipelineStage?.name || "(No hay datos)";
+      const current = oppMap[contactId];
+      const isMainPipeline = PRIORITY.includes(pipelineName);
+      const currentIsMain = current && PRIORITY.includes(current.pipeline);
+      if (!current || (isMainPipeline && !currentIsMain)) {
+        oppMap[contactId] = { pipeline: pipelineName, stage: stageName, status: opp.status || "open" };
+      }
+    });
+
+    // Normalizar
+    const contacts = rawContacts.map(c => normalizeContact(c, userMap, oppMap, cfMap));
+
+    // Separar llamadas de mensajes
     const callConvs = rawConversations.filter(c => isCallConversation(c));
     const msgConvs  = rawConversations.filter(c => !isCallConversation(c));
 
-    // Obtener duración + estado reales de las llamadas más recientes (máx 8, paralelo)
+    // Detalles de llamadas (máx 8)
     const callDetailMap = {};
     const toDetail = callConvs.slice(0, 8);
     const detailResults = await Promise.allSettled(toDetail.map(c => fetchCallMessages(c.id)));
@@ -365,16 +392,36 @@ export default async function handler(req, res) {
       if (r.status === "fulfilled" && r.value) callDetailMap[c.id] = r.value;
     });
 
-    const llamadas = callConvs.map((c) => normalizeLlamada(c, userMap, callDetailMap[c.id] || null));
-    const mensajes = msgConvs.map((c)  => normalizeConversation(c, userMap));
+    const mensajes = msgConvs.map(c => normalizeConversation(c, userMap));
+    const llamadas = callConvs.map(c => callDetailMap[c.id] ? normalizeCallMessage(callDetailMap[c.id], c) : {
+      "ID": c.id || "(No hay datos)",
+      "Body": "(No hay datos)",
+      "Direction": "(No hay datos)",
+      "Type": "(No hay datos)",
+      "Call Duration": "0",
+      "Call Status": "(No hay datos)",
+      "Call Recording": "(No hay datos)",
+      // LEGACY
+      "Nombre del Contacto": c.contactName || "(No hay datos)",
+      "Llamar realizada Vía": c.ownerName || "(No hay datos)",
+      "Duración (in segundos)": "0",
+      "Estado de la llamada": "No Answer",
+      "Creada Activado": c.dateCreated || "(No hay datos)",
+      "Contact Id": c.contactId || "(No hay datos)",
+    });
+
+    const usuarios = rawUsers.map(u => normalizeUser(u));
+    const oportunidades = rawOpps.map(o => normalizeOpportunity(o));
 
     res.json({
-      ok:        true,
-      synced:    true,
+      ok: true,
+      synced: true,
       contacts,
       mensajes,
       llamadas,
-      total:         contacts.length,
+      usuarios,
+      oportunidades,
+      total: contacts.length,
       totalMensajes: mensajes.length,
       totalLlamadas: llamadas.length,
       updatedAt: new Date().toISOString(),
