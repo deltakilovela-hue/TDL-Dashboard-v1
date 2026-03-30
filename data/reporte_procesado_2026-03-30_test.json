@@ -1,0 +1,117 @@
+{
+  "fileName": "informe_tdl_2026-03-30.md",
+  "processedAt": "2026-03-30T18:00:00.000Z",
+  "periodo": "30 de Marzo 2026",
+  "resumen": {
+    "leads": 45,
+    "contactos": 38,
+    "llamadas": 120,
+    "conversaciones": 89,
+    "mensajes": 156,
+    "agentesPrincipales": 3,
+    "presupuestos": 12
+  },
+  "contactos": [
+    {
+      "contactId": "contact_001",
+      "nombre": "Juan García López",
+      "telefono": "+34 612 345 678",
+      "asesor": "María Rodríguez",
+      "email": "juan.garcia@example.com",
+      "dateCreated": "2026-03-20"
+    },
+    {
+      "contactId": "contact_002",
+      "nombre": "Ana Martínez Silva",
+      "telefono": "+34 623 456 789",
+      "asesor": "Carlos Pérez",
+      "email": "ana.martinez@example.com",
+      "dateCreated": "2026-03-22"
+    },
+    {
+      "contactId": "contact_003",
+      "nombre": "Pedro González Ruiz",
+      "telefono": "+34 634 567 890",
+      "asesor": "María Rodríguez",
+      "email": "pedro.gonzalez@example.com",
+      "dateCreated": "2026-03-25"
+    }
+  ],
+  "llamadas": [
+    {
+      "contactId": "contact_001",
+      "contacto": "Juan García López",
+      "asignado": "María Rodríguez",
+      "duracion": 245,
+      "estado": "completed",
+      "tipo": "outbound",
+      "dateCreated": "2026-03-28T10:30:00.000Z"
+    },
+    {
+      "contactId": "contact_002",
+      "contacto": "Ana Martínez Silva",
+      "asignado": "Carlos Pérez",
+      "duracion": 0,
+      "estado": "no-answer",
+      "tipo": "outbound",
+      "dateCreated": "2026-03-28T14:15:00.000Z"
+    },
+    {
+      "contactId": "contact_003",
+      "contacto": "Pedro González Ruiz",
+      "asignado": "María Rodríguez",
+      "duracion": 567,
+      "estado": "completed",
+      "tipo": "inbound",
+      "dateCreated": "2026-03-29T09:45:00.000Z"
+    }
+  ],
+  "mensajes": [
+    {
+      "contactId": "contact_001",
+      "contacto": "Juan García López",
+      "asesor": "María Rodríguez",
+      "noLeidos": 2,
+      "tipo": "WhatsApp",
+      "direccion": "inbound",
+      "canal": "WhatsApp",
+      "dateCreated": "2026-03-30T08:30:00.000Z"
+    },
+    {
+      "contactId": "contact_002",
+      "contacto": "Ana Martínez Silva",
+      "asesor": "Carlos Pérez",
+      "noLeidos": 0,
+      "tipo": "SMS",
+      "direccion": "outbound",
+      "canal": "SMS",
+      "dateCreated": "2026-03-29T16:20:00.000Z"
+    }
+  ],
+  "leads": [
+    {
+      "leadId": "lead_001",
+      "nombre": "Roberto López",
+      "razonPerdida": "Presupuesto alto",
+      "dateCreated": "2026-03-28"
+    }
+  ],
+  "presupuestos": [
+    {
+      "presupuestoId": "presup_001",
+      "contacto": "Juan García López",
+      "monto": 15000,
+      "moneda": "EUR",
+      "nivelInteres": "Alto",
+      "dateCreated": "2026-03-25"
+    },
+    {
+      "presupuestoId": "presup_002",
+      "contacto": "Ana Martínez Silva",
+      "monto": 8500,
+      "moneda": "EUR",
+      "nivelInteres": "Medio",
+      "dateCreated": "2026-03-27"
+    }
+  ]
+}

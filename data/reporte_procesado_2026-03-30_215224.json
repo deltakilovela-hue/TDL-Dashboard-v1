@@ -1,0 +1,339 @@
+{
+  "fileName": "informe_tdl_2026-03-30.md",
+  "processedAt": "2026-03-30T21:52:24.446Z",
+  "periodo": "N/A",
+  "resumen": {},
+  "contactos": [
+    {
+      "nombre": "C001",
+      "telefono": "Juan García López",
+      "asesor": "+34 612 345 678"
+    },
+    {
+      "nombre": "C002",
+      "telefono": "Ana Martínez Silva",
+      "asesor": "+34 623 456 789"
+    },
+    {
+      "nombre": "C003",
+      "telefono": "Pedro González Ruiz",
+      "asesor": "+34 634 567 890"
+    },
+    {
+      "nombre": "C004",
+      "telefono": "Sofia Fernández Díaz",
+      "asesor": "+34 645 678 901"
+    },
+    {
+      "nombre": "C005",
+      "telefono": "Roberto López Sánchez",
+      "asesor": "+34 656 789 012"
+    },
+    {
+      "nombre": "C006",
+      "telefono": "Carmen Rodríguez García",
+      "asesor": "+34 667 890 123"
+    },
+    {
+      "nombre": "C007",
+      "telefono": "Miguel Torres Romero",
+      "asesor": "+34 678 901 234"
+    },
+    {
+      "nombre": "C008",
+      "telefono": "Isabel Jiménez Ruiz",
+      "asesor": "+34 689 012 345"
+    }
+  ],
+  "llamadas": [
+    {
+      "contacto": "Juan García López",
+      "asignado": "María Rodríguez",
+      "viaAsesor": "245",
+      "duracion": null,
+      "estado": "Answered"
+    },
+    {
+      "contacto": "Ana Martínez Silva",
+      "asignado": "Carlos Pérez",
+      "viaAsesor": "0",
+      "duracion": null,
+      "estado": "No Answer"
+    },
+    {
+      "contacto": "Pedro González Ruiz",
+      "asignado": "María Rodríguez",
+      "viaAsesor": "567",
+      "duracion": null,
+      "estado": "Answered"
+    },
+    {
+      "contacto": "Sofia Fernández Díaz",
+      "asignado": "Laura Gómez",
+      "viaAsesor": "189",
+      "duracion": null,
+      "estado": "Answered"
+    },
+    {
+      "contacto": "Roberto López Sánchez",
+      "asignado": "Carlos Pérez",
+      "viaAsesor": "0",
+      "duracion": null,
+      "estado": "No Answer"
+    },
+    {
+      "contacto": "Carmen Rodríguez García",
+      "asignado": "María Rodríguez",
+      "viaAsesor": "423",
+      "duracion": null,
+      "estado": "Answered"
+    },
+    {
+      "contacto": "Miguel Torres Romero",
+      "asignado": "Laura Gómez",
+      "viaAsesor": "156",
+      "duracion": null,
+      "estado": "Answered"
+    },
+    {
+      "contacto": "Isabel Jiménez Ruiz",
+      "asignado": "Carlos Pérez",
+      "viaAsesor": "289",
+      "duracion": null,
+      "estado": "Answered"
+    },
+    {
+      "contacto": "Juan García López",
+      "asignado": "2",
+      "viaAsesor": "María Rodríguez",
+      "duracion": null,
+      "estado": "Inbound"
+    },
+    {
+      "contacto": "Ana Martínez Silva",
+      "asignado": "0",
+      "viaAsesor": "Carlos Pérez",
+      "duracion": null,
+      "estado": "Outbound"
+    },
+    {
+      "contacto": "Pedro González Ruiz",
+      "asignado": "3",
+      "viaAsesor": "María Rodríguez",
+      "duracion": null,
+      "estado": "Inbound"
+    },
+    {
+      "contacto": "Sofia Fernández Díaz",
+      "asignado": "1",
+      "viaAsesor": "Laura Gómez",
+      "duracion": null,
+      "estado": "Inbound"
+    },
+    {
+      "contacto": "Roberto López Sánchez",
+      "asignado": "5",
+      "viaAsesor": "Carlos Pérez",
+      "duracion": null,
+      "estado": "Inbound"
+    },
+    {
+      "contacto": "Roberto López",
+      "asignado": "roberto.lost@example.com",
+      "viaAsesor": "+34 612 111 222",
+      "duracion": null,
+      "estado": "€25,000"
+    },
+    {
+      "contacto": "Carlos Muñoz",
+      "asignado": "carlos.lost@example.com",
+      "viaAsesor": "+34 623 222 333",
+      "duracion": null,
+      "estado": "€18,000"
+    },
+    {
+      "contacto": "Elena Vázquez",
+      "asignado": "elena.lost@example.com",
+      "viaAsesor": "+34 634 333 444",
+      "duracion": null,
+      "estado": "€12,000"
+    },
+    {
+      "contacto": "ID",
+      "asignado": "Contacto",
+      "viaAsesor": "Monto",
+      "duracion": null,
+      "estado": "Nivel de Interés"
+    },
+    {
+      "contacto": "P001",
+      "asignado": "Juan García López",
+      "viaAsesor": "€15,000",
+      "duracion": null,
+      "estado": "Alto"
+    },
+    {
+      "contacto": "P002",
+      "asignado": "Ana Martínez Silva",
+      "viaAsesor": "€8,500",
+      "duracion": null,
+      "estado": "Medio"
+    },
+    {
+      "contacto": "P003",
+      "asignado": "Pedro González Ruiz",
+      "viaAsesor": "€22,000",
+      "duracion": null,
+      "estado": "Alto"
+    },
+    {
+      "contacto": "P004",
+      "asignado": "Sofia Fernández Díaz",
+      "viaAsesor": "€5,200",
+      "duracion": null,
+      "estado": "Bajo"
+    },
+    {
+      "contacto": "P005",
+      "asignado": "Carmen Rodríguez García",
+      "viaAsesor": "€31,000",
+      "duracion": null,
+      "estado": "Alto"
+    }
+  ],
+  "mensajes": [
+    {
+      "contacto": "Juan García López",
+      "noLeidos": 2,
+      "asesor": "María Rodríguez",
+      "tipo": "WhatsApp",
+      "direccion": "Inbound",
+      "canal": "WhatsApp"
+    },
+    {
+      "contacto": "Ana Martínez Silva",
+      "noLeidos": 0,
+      "asesor": "Carlos Pérez",
+      "tipo": "SMS",
+      "direccion": "Outbound",
+      "canal": "SMS"
+    },
+    {
+      "contacto": "Pedro González Ruiz",
+      "noLeidos": 3,
+      "asesor": "María Rodríguez",
+      "tipo": "WhatsApp",
+      "direccion": "Inbound",
+      "canal": "WhatsApp"
+    },
+    {
+      "contacto": "Sofia Fernández Díaz",
+      "noLeidos": 1,
+      "asesor": "Laura Gómez",
+      "tipo": "Email",
+      "direccion": "Inbound",
+      "canal": "Email"
+    },
+    {
+      "contacto": "Roberto López Sánchez",
+      "noLeidos": 5,
+      "asesor": "Carlos Pérez",
+      "tipo": "WhatsApp",
+      "direccion": "Inbound",
+      "canal": "WhatsApp"
+    },
+    {
+      "contacto": "Roberto López",
+      "noLeidos": 0,
+      "asesor": "+34 612 111 222",
+      "tipo": "Presupuesto alto",
+      "direccion": "€25,000",
+      "canal": "2026-03-28"
+    },
+    {
+      "contacto": "Carlos Muñoz",
+      "noLeidos": 0,
+      "asesor": "+34 623 222 333",
+      "tipo": "Competencia",
+      "direccion": "€18,000",
+      "canal": "2026-03-27"
+    },
+    {
+      "contacto": "Elena Vázquez",
+      "noLeidos": 0,
+      "asesor": "+34 634 333 444",
+      "tipo": "No interesado",
+      "direccion": "€12,000",
+      "canal": "2026-03-26"
+    },
+    {
+      "contacto": "ID",
+      "noLeidos": 0,
+      "asesor": "Monto",
+      "tipo": "Moneda",
+      "direccion": "Nivel de Interés",
+      "canal": "Descripción"
+    },
+    {
+      "contacto": "P001",
+      "noLeidos": 0,
+      "asesor": "€15,000",
+      "tipo": "EUR",
+      "direccion": "Alto",
+      "canal": "Proyecto residencial"
+    },
+    {
+      "contacto": "P002",
+      "noLeidos": 0,
+      "asesor": "€8,500",
+      "tipo": "EUR",
+      "direccion": "Medio",
+      "canal": "Reforma comercial"
+    },
+    {
+      "contacto": "P003",
+      "noLeidos": 0,
+      "asesor": "€22,000",
+      "tipo": "EUR",
+      "direccion": "Alto",
+      "canal": "Construcción nueva"
+    },
+    {
+      "contacto": "P004",
+      "noLeidos": 0,
+      "asesor": "€5,200",
+      "tipo": "EUR",
+      "direccion": "Bajo",
+      "canal": "Mantenimiento"
+    },
+    {
+      "contacto": "P005",
+      "noLeidos": 0,
+      "asesor": "€31,000",
+      "tipo": "EUR",
+      "direccion": "Alto",
+      "canal": "Proyecto grande"
+    }
+  ],
+  "leads": [
+    {
+      "nombre": "Roberto López",
+      "fuente": "roberto.lost@example.com",
+      "asesor": "+34 612 111 222",
+      "pipeline": "Presupuesto alto"
+    },
+    {
+      "nombre": "Carlos Muñoz",
+      "fuente": "carlos.lost@example.com",
+      "asesor": "+34 623 222 333",
+      "pipeline": "Competencia"
+    },
+    {
+      "nombre": "Elena Vázquez",
+      "fuente": "elena.lost@example.com",
+      "asesor": "+34 634 333 444",
+      "pipeline": "No interesado"
+    }
+  ],
+  "presupuestos": []
+}
