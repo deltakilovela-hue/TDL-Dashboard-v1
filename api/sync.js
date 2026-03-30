@@ -104,19 +104,28 @@ async function fetchCustomFieldMap(locationId) {
   }
 }
 
-// ── Fetch contacts (paginado) ─────────────────────────────────────────────────
+// ── Fetch contacts (paginado, máx 20 páginas = 2000 contactos) ───────────────
 async function fetchContacts(locationId) {
   const all = [];
   let startAfterId = null;
-
   const seen = new Set();
-  while (true) {
-    const data = await ghlGet("/contacts/", { locationId, limit: "100", startAfterId });
-    const batch = (data.contacts || []).filter(c => { if (!c.id || seen.has(c.id)) return false; seen.add(c.id); return true; });
-    all.push(...batch);
-    const nextId = data.meta?.startAfterId;
-    if ((data.contacts||[]).length < 100 || !nextId || all.length >= (data.meta?.total || Infinity)) break;
-    startAfterId = data.contacts[data.contacts.length - 1].id;
+
+  for (let page = 0; page < 20; page++) {
+    try {
+      const data = await ghlGet("/contacts/", { locationId, limit: "100", startAfterId });
+      const batch = (data.contacts || []).filter(c => {
+        if (!c.id || seen.has(c.id)) return false;
+        seen.add(c.id); return true;
+      });
+      all.push(...batch);
+      const raw = data.contacts || [];
+      const nextId = data.meta?.startAfterId;
+      if (raw.length < 100 || !nextId || all.length >= (data.meta?.total || Infinity)) break;
+      startAfterId = nextId;
+    } catch (e) {
+      console.warn("⚠️ fetchContacts page", page, e.message);
+      break;
+    }
   }
   return all;
 }
@@ -347,9 +356,9 @@ export default async function handler(req, res) {
     const callConvs = rawConversations.filter(c => isCallConversation(c));
     const msgConvs  = rawConversations.filter(c => !isCallConversation(c));
 
-    // Obtener duración + estado reales de las llamadas más recientes (máx 20, paralelo)
+    // Obtener duración + estado reales de las llamadas más recientes (máx 8, paralelo)
     const callDetailMap = {};
-    const toDetail = callConvs.slice(0, 20);
+    const toDetail = callConvs.slice(0, 8);
     const detailResults = await Promise.allSettled(toDetail.map(c => fetchCallMessages(c.id)));
     toDetail.forEach((c, i) => {
       const r = detailResults[i];
