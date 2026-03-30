@@ -1847,19 +1847,76 @@ function GHLSyncPanel({ onReportReady }) {
   async function syncNow() {
     setStatus("syncing"); setSyncError(null);
     try {
-      const r = await fetch(`${GHL_SERVER}/api/sync`);
-      const data = await r.json();
-      if (!r.ok || !data.contacts) throw new Error(data.error || "Respuesta inválida");
-      const today = new Date().toISOString().split("T")[0];
-      const mensajes  = data.mensajes  || [];
-      const llamadas  = data.llamadas  || [];
-      const report = buildReportFromGHLContacts(data.contacts, today, mensajes, llamadas);
-      setLastSync(new Date().toISOString());
-      setTotalContacts(data.total || data.contacts.length);
-      setTotalMensajes(mensajes.length);
-      setTotalLlamadas(llamadas.length);
-      setStatus("connected");
-      onReportReady(report);
+      // Intentar cargar desde reporte .MD procesado
+      let reportData = null;
+      let lastUpdated = null;
+      try {
+        const reportRes = await fetch(`${GHL_SERVER}/api/load-report`);
+        const reportJson = await reportRes.json();
+        if (reportJson.success && reportJson.data) {
+          reportData = reportJson.data;
+          lastUpdated = reportJson.lastUpdated;
+        }
+      } catch (e) {
+        console.log("No report data available, falling back to GHL API");
+      }
+
+      // Si no hay reporte, usar GHL API
+      if (!reportData) {
+        const r = await fetch(`${GHL_SERVER}/api/sync`);
+        const data = await r.json();
+        if (!r.ok || !data.contacts) throw new Error(data.error || "Respuesta inválida");
+        const today = new Date().toISOString().split("T")[0];
+        const mensajes  = data.mensajes  || [];
+        const llamadas  = data.llamadas  || [];
+        const report = buildReportFromGHLContacts(data.contacts, today, mensajes, llamadas);
+        setLastSync(data.updatedAt || new Date().toISOString());
+        setTotalContacts(data.total || data.contacts.length);
+        setTotalMensajes(mensajes.length);
+        setTotalLlamadas(llamadas.length);
+        setStatus("connected");
+        onReportReady(report);
+      } else {
+        // Usar datos del reporte .MD
+        const today = new Date().toISOString().split("T")[0];
+
+        // Convertir datos del reporte al formato esperado por buildReportFromGHLContacts
+        const contactos = (reportData.contactos || []).map(c => ({
+          "Contact Id": c.contactId || "(No hay datos)",
+          "Nombre del Contacto": c.nombre || "(No hay datos)",
+          "Teléfono": c.telefono || "(No hay datos)",
+          "Asignado a": c.asesor || "(No hay datos)",
+          "Mensajes no leídos": "0",
+          "Canal del último Mensaje": "(No hay datos)",
+          "Dirección del último mensaje": "(No hay datos)",
+          "Creada Activado": c.dateCreated || today,
+        }));
+
+        const llamadas = (reportData.llamadas || []).map(l => ({
+          "Nombre del Contacto": l.contacto || "(No hay datos)",
+          "Llamar realizada Vía": l.asignado || "(No hay datos)",
+          "Duración (in segundos)": String(l.duracion || 0),
+          "Estado de la llamada": l.estado || "(No hay datos)",
+          "Creada Activado": l.dateCreated || today,
+        }));
+
+        const mensajes = (reportData.mensajes || []).map(m => ({
+          "Nombre del Contacto": m.contacto || "(No hay datos)",
+          "Mensajes no leídos": String(m.noLeidos || 0),
+          "Asignado a": m.asesor || "(No hay datos)",
+          "Canal del último Mensaje": m.canal || "(No hay datos)",
+          "Dirección del último mensaje": m.direccion || "(No hay datos)",
+          "Creada Activado": m.dateCreated || today,
+        }));
+
+        const report = buildReportFromGHLContacts(contactos, today, mensajes, llamadas);
+        setLastSync(lastUpdated || new Date().toISOString());
+        setTotalContacts(contactos.length);
+        setTotalMensajes(mensajes.length);
+        setTotalLlamadas(llamadas.length);
+        setStatus("connected");
+        onReportReady(report);
+      }
     } catch(err) { setStatus("error"); setSyncError(err.message.slice(0,80)); }
   }
 
@@ -1869,7 +1926,7 @@ function GHLSyncPanel({ onReportReady }) {
   return (
     <div style={{padding:"8px 10px",background:"#070D14",borderRadius:8,margin:"8px 6px 4px",border:`1px solid ${noServer?"#1E3050":"#6DB87A33"}`}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-        <div style={{color:"#5A7090",fontFamily:MONO,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>GHL Auto-Sync</div>
+        <div style={{color:"#5A7090",fontFamily:MONO,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>Última Actualización</div>
         <div style={{display:"flex",alignItems:"center",gap:4}}>
           <div style={{width:6,height:6,borderRadius:"50%",background:dotColor,boxShadow:!noServer?`0 0 5px ${dotColor}88`:"none"}}/>
           {!noServer&&<button onClick={checkServer} style={{background:"none",border:"none",cursor:"pointer",color:"#3A5070",padding:0,fontFamily:MONO,fontSize:10}} title="Verificar conexión">↻</button>}
@@ -1882,7 +1939,7 @@ function GHLSyncPanel({ onReportReady }) {
       ) : (
         <>
           {totalContacts>0&&<div style={{color:"#8A9BB8",fontFamily:MONO,fontSize:10,marginBottom:1}}>{totalContacts.toLocaleString()} contactos{totalLlamadas>0&&<span style={{color:"#5A7090"}}> · {totalLlamadas.toLocaleString()} 📞</span>}{totalMensajes>0&&<span style={{color:"#5A7090"}}> · {totalMensajes.toLocaleString()} 💬</span>}</div>}
-          {lastSync&&<div style={{color:"#3A5070",fontFamily:MONO,fontSize:9,marginBottom:5}}>
+          {lastSync&&<div style={{color:"#6DB87A",fontFamily:MONO,fontSize:9,marginBottom:5,fontWeight:600}}>
             {new Date(lastSync).toLocaleDateString("es-MX",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
           </div>}
           {syncError&&<div style={{color:"#E8824A",fontFamily:MONO,fontSize:9,marginBottom:5,lineHeight:1.3}}>{syncError}</div>}
@@ -1891,7 +1948,7 @@ function GHLSyncPanel({ onReportReady }) {
             disabled={status==="syncing"||status==="checking"}
             style={{width:"100%",background:status==="syncing"?"#1E3050":GOLD,color:status==="syncing"?"#5A7090":NAVY,border:"none",borderRadius:6,padding:"6px 8px",cursor:status==="syncing"||status==="checking"?"not-allowed":"pointer",fontFamily:MONO,fontSize:9,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:4,transition:"all 0.15s"}}
           >
-            {status==="syncing"?"⏳ Descargando…":"🔄 Sincronizar GHL"}
+            {status==="syncing"?"⏳ Sincronizando…":"🔄 Cargar Datos"}
           </button>
         </>
       )}
