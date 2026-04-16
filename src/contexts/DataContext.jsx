@@ -46,20 +46,58 @@ function parseCSV(text) {
 }
 
 // ── Parsear pipeline desde campo Opportunities del CSV ──────────────────────
-// Formato: "open 01 - Desarrollos Interesado en proyecto 🤖"
+// Puede tener múltiples oportunidades: "open 01 - Desarrollos Etapa, open Seguimiento IA Otro"
+// Prioridad: pipelines principales con status open > won > lost/abandoned
+const PIPELINE_NAMES = [
+  "01 - Desarrollos",
+  "02 - Cierre",
+  "Rentas Vacacionales",
+  "Rentas vacacionales", // variante lowercase del CSV
+];
+const SKIP_PIPELINES = ["seguimiento ia", "recepción", "recepcion"];
+
 function parseOpportunity(oppStr) {
-  if (!oppStr) return { pipelineName: "(No hay datos)", pipelineStage: "(No hay datos)" };
-  const PIPELINES = ["01 - Desarrollos", "02 - Cierre", "Rentas Vacacionales"];
-  for (const p of PIPELINES) {
-    if (oppStr.includes(p)) {
-      const stage = oppStr
-        .replace(/^(open|won|lost|abandoned)\s+/i, "")
-        .replace(p, "")
-        .trim();
-      return { pipelineName: p, pipelineStage: stage || "(No hay datos)" };
+  if (!oppStr || !oppStr.trim())
+    return { pipelineName: "(No hay datos)", pipelineStage: "(No hay datos)" };
+
+  // Dividir múltiples oportunidades por coma seguida de status
+  const parts = oppStr.split(/,\s*(?=open\s|won\s|lost\s|abandoned\s)/i);
+
+  const opps = parts.map(part => {
+    const m = part.trim().match(/^(open|won|lost|abandoned)\s+(.+)/i);
+    if (!m) return null;
+    const status = m[1].toLowerCase();
+    const rest   = m[2].trim();
+
+    // Identificar pipeline por nombre conocido al inicio del string
+    let pipelineName  = null;
+    let pipelineStage = rest;
+
+    for (const p of PIPELINE_NAMES) {
+      if (rest.toLowerCase().startsWith(p.toLowerCase())) {
+        pipelineName  = p === "Rentas vacacionales" ? "Rentas Vacacionales" : p;
+        pipelineStage = rest.slice(p.length).trim() || "(No hay datos)";
+        break;
+      }
     }
-  }
-  return { pipelineName: "(No hay datos)", pipelineStage: "(No hay datos)" };
+    if (!pipelineName) return null; // pipeline desconocido o Seguimiento IA
+    return { status, pipelineName, pipelineStage };
+  }).filter(Boolean);
+
+  if (opps.length === 0)
+    return { pipelineName: "(No hay datos)", pipelineStage: "(No hay datos)" };
+
+  // Filtrar pipelines de skip y priorizar: open > won > lost; pipeline principal primero
+  const priority = (o) => {
+    const statusScore  = o.status === "open" ? 0 : o.status === "won" ? 1 : 2;
+    const pipelineScore = PIPELINE_NAMES.findIndex(p =>
+      p.toLowerCase() === o.pipelineName.toLowerCase()
+    );
+    return statusScore * 10 + (pipelineScore === -1 ? 9 : pipelineScore);
+  };
+
+  const best = opps.sort((a, b) => priority(a) - priority(b))[0];
+  return { pipelineName: best.pipelineName, pipelineStage: best.pipelineStage };
 }
 
 // ── Mapear fila CSV al formato normalizado del dashboard ──────────────────────

@@ -201,7 +201,15 @@ export default function LeadsView() {
         }
         return true;
       })
-      .map(c => ({ ...c, nombre: `${c.firstName} ${c.lastName}`.trim() || "(Sin nombre)" }));
+      .map(c => ({ ...c, nombre: `${c.firstName} ${c.lastName}`.trim() || "(Sin nombre)" }))
+      // Contactos sin asesor asignado van al final
+      .sort((a, b) => {
+        const aNoAsesor = !a.assignedTo || a.assignedTo === "(No hay datos)";
+        const bNoAsesor = !b.assignedTo || b.assignedTo === "(No hay datos)";
+        if (aNoAsesor && !bNoAsesor) return 1;
+        if (!aNoAsesor && bNoAsesor) return -1;
+        return 0;
+      });
   }, [contacts, filterAgent, filterSource, filterInterest, filterPipeline, search, dateFrom, dateTo]);
 
   // KPIs rápidos sobre los leads filtrados
