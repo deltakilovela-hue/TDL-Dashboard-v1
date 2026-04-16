@@ -102,6 +102,20 @@ async function fetchContacts(locationId) {
 }
 
 // ── Oportunidades ─────────────────────────────────────────────────────────────
+// Statuses permitidos: open, won, abandoned  (lost = excluido)
+const ALLOWED_STATUSES = new Set(["open", "won", "abandoned"]);
+const SKIP_PIPELINE_NAMES = ["seguimiento ia", "recepción", "recepcion"];
+
+// Puntuación para elegir la "mejor" oportunidad por contacto
+// Menor = mejor prioridad
+function oppScore(status, pipeline) {
+  const statusScore   = status === "open" ? 0 : status === "abandoned" ? 1 : 2; // won=2
+  const pipelineScore = PRIORITY_PIPELINES.findIndex(
+    p => p.toLowerCase() === pipeline.toLowerCase()
+  );
+  return statusScore * 10 + (pipelineScore === -1 ? 99 : pipelineScore);
+}
+
 async function fetchOpportunityMap(locationId) {
   const map = {};
   let startAfterId = null;
@@ -118,24 +132,34 @@ async function fetchOpportunityMap(locationId) {
       opps.forEach(opp => {
         const contactId    = opp.contactId || opp.contact?.id;
         if (!contactId) return;
-        const pipelineName = opp.pipeline?.name || opp.pipelineName || "(No hay datos)";
+
+        const pipelineName = opp.pipeline?.name || opp.pipelineName || "";
         const stageName    = opp.pipelineStage?.name || opp.pipelineStageName || "(No hay datos)";
-        const value        = opp.value ?? "(No hay datos)";
-        const status       = opp.status || "open";
+        const status       = (opp.status || "open").toLowerCase();
 
-        if (pipelineName === "Seguimiento IA") return;
+        // Excluir pipelines de skip y status "lost"
+        const pipelineLower = pipelineName.toLowerCase();
+        if (SKIP_PIPELINE_NAMES.some(s => pipelineLower.includes(s))) return;
+        if (!ALLOWED_STATUSES.has(status)) return; // descarta "lost"
 
-        const current       = map[contactId];
-        const isMain        = PRIORITY_PIPELINES.includes(pipelineName);
-        const currentIsMain = current && PRIORITY_PIPELINES.includes(current.pipeline);
+        // Solo pipelines principales
+        const isMain = PRIORITY_PIPELINES.some(
+          p => p.toLowerCase() === pipelineLower
+        );
+        if (!isMain) return;
 
-        if (!current || (isMain && !currentIsMain) ||
-            (isMain && currentIsMain && status === "open" && current.status !== "open")) {
-          map[contactId] = { pipeline: pipelineName, stage: stageName, value, status };
+        const current = map[contactId];
+        const newScore = oppScore(status, pipelineName);
+        const curScore = current ? oppScore(current.status, current.pipeline) : 999;
+
+        if (newScore < curScore) {
+          map[contactId] = { pipeline: pipelineName, stage: stageName, status };
         }
       });
 
-      const nextId = data.meta?.startAfterId;
+      // Fix paginación: GHL no siempre devuelve startAfterId en meta
+      const nextId = data.meta?.startAfterId
+        || (opps.length === 100 ? opps[opps.length - 1].id : null);
       if (opps.length < 100 || !nextId) break;
       startAfterId = nextId;
     } catch (e) {
