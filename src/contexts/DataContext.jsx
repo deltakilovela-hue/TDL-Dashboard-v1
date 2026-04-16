@@ -17,12 +17,10 @@ function loadFromLS(key) {
 }
 
 function saveToLS(key, payload) {
-  try {
-    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), payload }));
-  } catch {}
+  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), payload })); } catch {}
 }
 
-// ── Parsear CSV de exportación GHL ────────────────────────────────────────────
+// ── CSV Parser ────────────────────────────────────────────────────────────────
 function parseCSVLine(line) {
   const result = []; let cur = "", inQ = false;
   for (let i = 0; i < line.length; i++) {
@@ -47,58 +45,75 @@ function parseCSV(text) {
   });
 }
 
-// Mapea una fila del CSV de GHL al formato normalizado del dashboard
+// ── Parsear pipeline desde campo Opportunities del CSV ──────────────────────
+// Formato: "open 01 - Desarrollos Interesado en proyecto 🤖"
+function parseOpportunity(oppStr) {
+  if (!oppStr) return { pipelineName: "(No hay datos)", pipelineStage: "(No hay datos)" };
+  const PIPELINES = ["01 - Desarrollos", "02 - Cierre", "Rentas Vacacionales"];
+  for (const p of PIPELINES) {
+    if (oppStr.includes(p)) {
+      const stage = oppStr
+        .replace(/^(open|won|lost|abandoned)\s+/i, "")
+        .replace(p, "")
+        .trim();
+      return { pipelineName: p, pipelineStage: stage || "(No hay datos)" };
+    }
+  }
+  return { pipelineName: "(No hay datos)", pipelineStage: "(No hay datos)" };
+}
+
+// ── Mapear fila CSV al formato normalizado del dashboard ──────────────────────
 function mapCSVRow(row) {
   const g = (...keys) => {
     for (const k of keys) {
       const v = row[k];
-      if (v && v.trim() && v.trim() !== "N/A") return v.trim();
+      if (v !== undefined && v !== null && v.trim() && v.trim() !== "N/A") return v.trim();
     }
     return "(No hay datos)";
   };
 
-  const firstName = g("First Name", "first_name", "Nombre");
-  const lastName  = g("Last Name",  "last_name",  "Apellido");
+  const { pipelineName, pipelineStage } = parseOpportunity(row["Opportunities"] || "");
 
   return {
-    id:            g("Contact Id", "id", "contact_id") + "_csv",
-    firstName,
-    lastName,
-    phone:         g("Phone", "Mobile Phone", "Número de teléfono", "phone"),
-    email:         g("Email", "email"),
-    source:        g("Source", "source", "Fuente"),
-    status:        g("Status", "status", "Estado"),
-    dateAdded:     g("Date Added", "Created On", "Fecha de creación"),
-    dateUpdated:   g("Date Updated", "Updated"),
-    lastActivity:  g("Last Activity Date", "Last Activity"),
-    assignedTo:    g("Assigned To", "Owner Name", "Usuario asignado", "Assigned User"),
-    tags:          g("Tags", "tags"),
-    unreadCount:   0,
-    pipelineName:  g("Pipeline Name", "Pipeline", "pipeline_name"),
-    pipelineStage: g("Pipeline Stage", "Stage", "pipeline_stage"),
-    // Encuesta — Primer Contacto
-    nivelInteres:    g("🌡️ Nivel de interés del prospecto", "Nivel de interés del prospecto", "nivel_de_interes"),
-    presupuesto:     g("💸 Presupuesto estimado", "Presupuesto estimado"),
-    financiamiento:  g("🏦 ¿Cuenta con financiamiento o crédito?", "Financiamiento"),
-    deseaCita:       g("📅 ¿Desea agendar una cita?", "Desea agendar una cita"),
-    medioContacto:   g("Medio de contacto de preferencia"),
-    funciones:       g("Funciones de LEAD"),
+    id:           (row["Contact Id"] || row["id"] || "") + "_csv",
+    firstName:    g("First Name", "first_name"),
+    lastName:     g("Last Name",  "last_name"),
+    phone:        g("Phone", "Mobile Phone", "Número de teléfono"),
+    email:        g("Email", "email"),
+    source:       g("Source", "source", "Fuente"),
+    status:       g("Contact Type", "Status", "status"),
+    // ── El CSV de GHL usa "Created", no "Date Added" ──
+    dateAdded:    g("Created", "Date Added", "Created On", "Fecha de creación"),
+    dateUpdated:  g("Updated", "Date Updated"),
+    lastActivity: g("Last Activity", "Last Activity Date"),
+    assignedTo:   g("Assigned To", "Owner Name", "Usuario asignado"),
+    tags:         g("Tags", "tags"),
+    unreadCount:  0,
+    pipelineName,
+    pipelineStage,
+    // ── Encuesta Primer Contacto ──
+    nivelInteres:   g("🌡️ Nivel de interés del prospecto", "Nivel de interés del prospecto"),
+    presupuesto:    g("💸 Presupuesto estimado", "Presupuesto estimado"),
+    financiamiento: g("🏦 ¿Cuenta con financiamiento o crédito?", "Financiamiento"),
+    // El CSV usa 📆 (no 📅)
+    deseaCita:      g("📆 ¿Desea agendar una cita?", "📅 ¿Desea agendar una cita?", "¿Desea agendar una cita?"),
+    medioContacto:  g("Medio de contacto de preferencia"),
+    funciones:      g("Funciones de LEAD"),
     notaPrimerContacto: g("Comentario de NOTA primer contacto"),
-    // Encuesta — Cierre
-    sePresentoCita:  g("¿El prospecto se presentó a la cita?", "Se presentó a la cita"),
+    // ── Encuesta Cierre Comercial ──
+    sePresentoCita:  g("👥 ¿El prospecto se presentó a la cita?", "¿El prospecto se presentó a la cita?"),
     nivelInteresPost:g("📊 Nivel de interés después de la cita", "Nivel de interés después de la cita"),
-    queFaltaCerrar:  g("¿Qué le hace falta para cerrar?"),
-    requiereCloser:  g("¿Requiere closer u otro equipo?"),
-    fechaSeguimiento:g("📅 Fecha tentativa seguimiento/cierre"),
-    notaCierre:      g("Comentario NOTA Cierre Comercial"),
+    queFaltaCerrar:  g("📝 ¿Qué le hace falta para cerrar la operación?", "¿Qué le hace falta para cerrar?"),
+    requiereCloser:  g("🔁 ¿Requiere intervención de un closer u otro equipo?", "¿Requiere closer u otro equipo?"),
+    fechaSeguimiento:g("🗓️ Fecha tentativa de seguimiento/cierre", "Fecha tentativa de seguimiento/cierre"),
+    notaCierre:      g("Comentario NOTA Cierre comercial", "Comentario NOTA Cierre Comercial"),
     _fromCSV: true,
   };
 }
 
-// Merge: GHL contacts tienen prioridad, CSV llena los que faltan por ID
+// ── Merge GHL + CSV sin duplicados ────────────────────────────────────────────
 function mergeContacts(ghlContacts, csvContacts) {
   const ghlIds = new Set(ghlContacts.map(c => c.id));
-  // Quitar el sufijo _csv para comparar
   const csvNew = csvContacts.filter(c => !ghlIds.has(c.id.replace("_csv", "")));
   return [...ghlContacts, ...csvNew];
 }
@@ -111,7 +126,6 @@ export function DataProvider({ children }) {
   const [error,       setError]       = useState(null);
   const [lastSync,    setLastSync]    = useState(null);
 
-  // Cargar CSV guardado al iniciar
   useEffect(() => {
     const saved = loadFromLS(LS_CSV);
     if (saved) setCsvContacts(saved);
@@ -144,11 +158,10 @@ export function DataProvider({ children }) {
     }
   }, []);
 
-  // Importar CSV histórico
   const importCSV = useCallback((csvText) => {
     try {
-      const rows    = parseCSV(csvText);
-      const mapped  = rows.map(mapCSVRow).filter(c => c.firstName !== "(No hay datos)");
+      const rows   = parseCSV(csvText);
+      const mapped = rows.map(mapCSVRow).filter(c => c.firstName !== "(No hay datos)");
       setCsvContacts(mapped);
       saveToLS(LS_CSV, mapped);
       return { ok: true, count: mapped.length };
@@ -162,7 +175,6 @@ export function DataProvider({ children }) {
     localStorage.removeItem(LS_CSV);
   }, []);
 
-  // Combinar GHL + CSV
   const mergedData = data ? {
     ...data,
     contacts: mergeContacts(data.contacts ?? [], csvContacts),
@@ -173,14 +185,11 @@ export function DataProvider({ children }) {
 
   return (
     <DataContext.Provider value={{
-      data:     mergedData,
+      data: mergedData,
       csvCount: csvContacts.length,
-      loading,
-      error,
-      lastSync,
+      loading, error, lastSync,
       refresh:   () => fetchData(true),
-      importCSV,
-      clearCSV,
+      importCSV, clearCSV,
     }}>
       {children}
     </DataContext.Provider>
