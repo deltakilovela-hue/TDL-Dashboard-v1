@@ -254,8 +254,10 @@ export function DataProvider({ children }) {
 
   const mergedData = data ? {
     ...data,
-    contacts: mergeContacts(data.contacts ?? [], csvContacts),
-    total:    mergeContacts(data.contacts ?? [], csvContacts).length,
+    contacts:      mergeContacts(data.contacts ?? [], csvContacts),
+    total:         mergeContacts(data.contacts ?? [], csvContacts).length,
+    conversations: data.conversations ?? [],
+    usuarios:      data.usuarios      ?? [],
   } : null;
 
   useEffect(() => { fetchData(false); }, [fetchData]);

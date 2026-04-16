@@ -1,12 +1,12 @@
-import { useRef, useState } from "react";
-import { RefreshCw, LayoutList, Activity, BarChart2, Wifi, WifiOff, Upload, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 
-const TABS = [
-  { id: "leads",     label: "Leads",    icon: LayoutList },
-  { id: "actividad", label: "Actividad", icon: Activity   },
-  { id: "resumen",   label: "Resumen",   icon: BarChart2  },
-];
+function formatWeekLabel(week) {
+  const opts = { day: "numeric", month: "short" };
+  const from = week.from.toLocaleDateString("es-MX", opts);
+  const to   = week.to.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+  return `${from} – ${to}`;
+}
 
 function relativeTime(date) {
   if (!date) return null;
@@ -17,31 +17,12 @@ function relativeTime(date) {
   return `hace ${Math.floor(diff / 86400)} d`;
 }
 
-export default function Navbar({ activeTab, onTabChange }) {
-  const { data, loading, error, lastSync, refresh, importCSV, clearCSV, csvCount } = useData();
-  const fileRef   = useRef(null);
-  const [csvMsg,  setCsvMsg]  = useState(null); // { type: "ok"|"err", text }
-
-  function handleFileChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = importCSV(ev.target.result);
-      if (result.ok) {
-        setCsvMsg({ type: "ok", text: `${result.count} contactos importados` });
-      } else {
-        setCsvMsg({ type: "err", text: result.error });
-      }
-      setTimeout(() => setCsvMsg(null), 4000);
-    };
-    reader.readAsText(file, "utf-8");
-    e.target.value = ""; // reset para permitir re-importar el mismo archivo
-  }
+export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent }) {
+  const { data, loading, error, lastSync, refresh } = useData();
 
   return (
     <header className="sticky top-0 z-50 border-b border-dark-700 bg-dark-950/90 backdrop-blur-md">
-      <div className="mx-auto max-w-screen-2xl px-4 sm:px-6">
+      <div className="mx-auto max-w-screen-xl px-4 sm:px-6">
         <div className="flex h-14 items-center gap-4">
 
           {/* Logo */}
@@ -56,90 +37,51 @@ export default function Navbar({ activeTab, onTabChange }) {
 
           <div className="hidden h-6 w-px bg-dark-600 sm:block" />
 
-          {/* Tabs */}
-          <nav className="flex flex-1 items-center gap-1">
-            {TABS.map(({ id, label, icon: Icon }) => {
-              const active = activeTab === id;
-              return (
-                <button
-                  key={id}
-                  onClick={() => onTabChange(id)}
-                  className={[
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
-                    active
-                      ? "bg-gold-500/15 text-gold-400 ring-1 ring-gold-500/30"
-                      : "text-cream-muted hover:bg-dark-700 hover:text-cream",
-                  ].join(" ")}
-                >
-                  <Icon size={14} />
-                  <span className="hidden sm:inline">{label}</span>
-                </button>
-              );
-            })}
-          </nav>
+          {/* Navegador de semanas */}
+          <div className="flex flex-1 items-center justify-center gap-1">
+            <button
+              onClick={onPrev}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-cream-muted transition-colors hover:bg-dark-700 hover:text-cream"
+              title="Semana anterior"
+            >
+              <ChevronLeft size={16} />
+            </button>
 
-          {/* Derecha: estado + CSV + sync */}
-          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={onCurrent}
+              className={[
+                "min-w-[200px] rounded-md px-3 py-1.5 text-center text-sm font-medium transition-all",
+                isCurrentWeek
+                  ? "bg-gold-500/15 text-gold-400 ring-1 ring-gold-500/30"
+                  : "text-cream-muted hover:bg-dark-700 hover:text-cream",
+              ].join(" ")}
+            >
+              {isCurrentWeek ? "Esta semana · " : ""}{formatWeekLabel(week)}
+            </button>
 
-            {/* Estado de conexión */}
+            <button
+              onClick={onNext}
+              disabled={isCurrentWeek}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-cream-muted transition-colors hover:bg-dark-700 hover:text-cream disabled:cursor-not-allowed disabled:opacity-30"
+              title="Semana siguiente"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* Derecha: estado + sync */}
+          <div className="flex shrink-0 items-center gap-3">
             <div className="hidden items-center gap-1.5 sm:flex">
               {error ? (
-                <><WifiOff size={13} className="text-danger-400" />
-                  <span className="text-xs text-danger-400">Error</span></>
+                <><WifiOff size={13} className="text-danger-400" /><span className="text-xs text-danger-400">Error</span></>
               ) : data ? (
                 <><Wifi size={13} className="text-success-400" />
                   <span className="text-xs text-cream-dim">
-                    {lastSync ? relativeTime(lastSync) : ""}
-                    {data.total ? ` · ${data.total} leads` : ""}
-                    {csvCount > 0 ? ` (${csvCount} CSV)` : ""}
+                    {lastSync ? relativeTime(lastSync) : ""}{data.total ? ` · ${data.total} contactos` : ""}
                   </span></>
               ) : null}
             </div>
 
-            {/* Botón importar CSV histórico */}
-            <div className="relative">
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-              <button
-                onClick={() => fileRef.current?.click()}
-                title="Importar contactos históricos desde CSV"
-                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ring-1 ring-dark-500 text-cream-muted transition-all hover:bg-dark-700 hover:text-cream hover:ring-dark-400"
-              >
-                <Upload size={13} />
-                <span className="hidden sm:inline">Importar CSV</span>
-              </button>
-
-              {/* Toast de confirmación */}
-              {csvMsg && (
-                <div className={[
-                  "absolute right-0 top-10 z-50 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs shadow-xl whitespace-nowrap",
-                  csvMsg.type === "ok"
-                    ? "border-success-400/30 bg-dark-800 text-success-400"
-                    : "border-danger-400/30 bg-dark-800 text-danger-400",
-                ].join(" ")}>
-                  {csvMsg.text}
-                </div>
-              )}
-            </div>
-
-            {/* Limpiar CSV si hay importado */}
-            {csvCount > 0 && (
-              <button
-                onClick={clearCSV}
-                title={`Eliminar ${csvCount} contactos importados por CSV`}
-                className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-cream-dim ring-1 ring-dark-600 transition-all hover:text-danger-400 hover:ring-danger-400/30"
-              >
-                <X size={12} />
-                <span className="hidden sm:inline">CSV</span>
-              </button>
-            )}
-
-            {/* Botón sincronizar GHL */}
             <button
               onClick={refresh}
               disabled={loading}
@@ -154,6 +96,7 @@ export default function Navbar({ activeTab, onTabChange }) {
               <span className="hidden sm:inline">{loading ? "Sincronizando…" : "Sincronizar"}</span>
             </button>
           </div>
+
         </div>
       </div>
     </header>
