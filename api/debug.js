@@ -38,18 +38,17 @@ export default async function handler(req, res) {
   const contacts1 = c1.body?.contacts || [];
   const meta1     = c1.body?.meta || {};
 
-  // ── Test 2: Contacts page 2 (si hay más) ───────────────────────────────────
+  // ── Test 2: Contacts page 2 (manda AMBOS: startAfterId + startAfter) ─────────
   let contacts2 = null;
   let meta2     = null;
-  if (c1.ok && (meta1.startAfterId || contacts1.length === 100)) {
-    const cursor = meta1.startAfterId || contacts1[contacts1.length - 1]?.id;
-    if (cursor) {
-      const c2 = await ghlGet("/contacts/", {
-        locationId: LOCATION_ID, limit: "100", startAfterId: cursor,
-      }, API_KEY);
-      contacts2 = c2.body?.contacts?.length ?? "error";
-      meta2     = c2.body?.meta || null;
-    }
+  if (c1.ok && meta1.startAfterId) {
+    const c2 = await ghlGet("/contacts/", {
+      locationId: LOCATION_ID, limit: "100",
+      startAfterId: meta1.startAfterId,
+      ...(meta1.startAfter ? { startAfter: meta1.startAfter } : {}),
+    }, API_KEY);
+    contacts2 = c2.body?.contacts?.length ?? "error";
+    meta2     = c2.body?.meta || null;
   }
 
   // ── Test 3: Opportunities page 1 ───────────────────────────────────────────

@@ -37,19 +37,40 @@ async function ghlGet(path, params = {}) {
 }
 
 // ── Extraer cursor de la respuesta GHL ─────────────────────────────────────
-// GHL puede devolver: meta.startAfterId, meta.nextPageUrl, o nada (usamos último id)
+// GHL requiere AMBOS startAfterId (string) y startAfter (timestamp ms) para paginar.
+// Sin startAfter, el API devuelve la misma página infinitamente.
 function extractCursor(data, batch) {
-  if (data.meta?.startAfterId) return data.meta.startAfterId;
-  // Intentar parsear nextPageUrl
+  const id = data.meta?.startAfterId;
+  const ts = data.meta?.startAfter;          // número Unix ms
+  if (id) return { startAfterId: id, startAfter: ts ?? null };
+
+  // Fallback: parsear nextPageUrl si existe
   if (data.meta?.nextPageUrl) {
     try {
-      const u    = new URL(data.meta.nextPageUrl);
-      const sid  = u.searchParams.get("startAfterId");
-      if (sid) return sid;
+      const u   = new URL(data.meta.nextPageUrl);
+      const sid = u.searchParams.get("startAfterId");
+      const sts = u.searchParams.get("startAfter");
+      if (sid) return { startAfterId: sid, startAfter: sts ? Number(sts) : null };
     } catch {}
   }
-  // Fallback: id del último elemento del batch
-  return batch.length === 100 ? batch[batch.length - 1].id : null;
+
+  // Último recurso: sin timestamp, no hay paginación confiable
+  return null;
+}
+
+// Convierte cursor → params para ghlGet
+function cursorParams(cursor) {
+  if (!cursor) return {};
+  return {
+    startAfterId: cursor.startAfterId,
+    ...(cursor.startAfter != null ? { startAfter: cursor.startAfter } : {}),
+  };
+}
+
+// True si el cursor nuevo es igual al anterior (loop infinito)
+function samecursor(a, b) {
+  if (!a || !b) return false;
+  return a.startAfterId === b.startAfterId && a.startAfter === b.startAfter;
 }
 
 // ── Usuarios ──────────────────────────────────────────────────────────────────
@@ -99,7 +120,7 @@ async function fetchCustomFieldMap(locationId) {
 async function fetchContacts(locationId) {
   const all    = [];
   const seen   = new Set();
-  let cursor   = null;
+  let cursor   = null;                        // { startAfterId, startAfter }
   const meta   = { pages: 0, totalReported: null };
 
   for (let page = 0; page < 20; page++) {
@@ -107,7 +128,7 @@ async function fetchContacts(locationId) {
       const data  = await ghlGet("/contacts/", {
         locationId,
         limit: "100",
-        ...(cursor ? { startAfterId: cursor } : {}),
+        ...cursorParams(cursor),
       });
       const raw   = data.contacts || [];
       if (page === 0) meta.totalReported = data.meta?.total ?? null;
@@ -119,10 +140,10 @@ async function fetchContacts(locationId) {
         return true;
       });
       all.push(...batch);
-      console.log(`contacts page ${page + 1}: ${raw.length} raw, ${all.length} total`);
+      console.log(`contacts page ${page + 1}: ${raw.length} raw, ${all.length} acumulados`);
 
       const next = extractCursor(data, raw);
-      if (raw.length < 100 || !next || next === cursor) break;
+      if (raw.length < 100 || !next || samecursor(cursor, next)) break;
       cursor = next;
     } catch (e) {
       console.warn("⚠️ fetchContacts page", page, e.message);
@@ -150,13 +171,12 @@ async function fetchOpportunityMap(locationId) {
       const data = await ghlGet("/opportunities/search", {
         location_id: locationId,
         limit: "100",
-        ...(cursor ? { startAfterId: cursor } : {}),
+        ...cursorParams(cursor),
       });
       const opps = data.opportunities || [];
       console.log(`opps page ${page + 1}: ${opps.length}`);
 
       opps.forEach(opp => {
-        // GHL puede devolver contactId en distintos lugares
         const contactId = opp.contactId || opp.contact?.id;
         if (!contactId) return;
 
@@ -164,7 +184,6 @@ async function fetchOpportunityMap(locationId) {
         const stageName    = opp.pipelineStage?.name || opp.pipelineStageName || "(No hay datos)";
         const status       = (opp.status || "open").toLowerCase();
 
-        // Excluir pipelines no relevantes y status "lost"
         const pl = pipelineName.toLowerCase();
         if (SKIP_PIPELINE_NAMES.some(s => pl.includes(s))) return;
         if (!ALLOWED_STATUSES.has(status)) return;
@@ -180,7 +199,7 @@ async function fetchOpportunityMap(locationId) {
       });
 
       const next = extractCursor(data, opps);
-      if (opps.length < 100 || !next || next === cursor) break;
+      if (opps.length < 100 || !next || samecursor(cursor, next)) break;
       cursor = next;
     } catch (e) {
       console.warn("⚠️ fetchOpportunityMap page", page, e.message);
@@ -200,13 +219,13 @@ async function fetchConversations(locationId) {
       const data  = await ghlGet("/conversations/search", {
         locationId,
         limit: "100",
-        ...(cursor ? { startAfterId: cursor } : {}),
+        ...cursorParams(cursor),
       });
       const batch = data.conversations || [];
       all.push(...batch);
       console.log(`convs page ${page + 1}: ${batch.length}`);
       const next = extractCursor(data, batch);
-      if (batch.length < 100 || !next || next === cursor) break;
+      if (batch.length < 100 || !next || samecursor(cursor, next)) break;
       cursor = next;
     } catch (e) {
       console.warn("⚠️ fetchConversations page", page, e.message);
