@@ -20,29 +20,61 @@ function saveToLS(key, payload) {
   try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), payload })); } catch {}
 }
 
-// ── CSV Parser ────────────────────────────────────────────────────────────────
-function parseCSVLine(line) {
-  const result = []; let cur = "", inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') { inQ = !inQ; continue; }
-    if (c === "," && !inQ) { result.push(cur.trim()); cur = ""; continue; }
-    cur += c;
+// ── CSV Parser robusto (maneja campos con comas Y saltos de línea dentro de comillas) ──
+function parseCSV(text) {
+  const src     = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const records = [];
+  let headers   = null;
+  let pos       = 0;
+
+  while (pos < src.length) {
+    const { fields, next } = readRecord(src, pos);
+    pos = next;
+    if (fields.length === 0 || (fields.length === 1 && fields[0] === "")) continue;
+    if (!headers) { headers = fields; continue; }
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = fields[i] ?? ""; });
+    records.push(obj);
   }
-  result.push(cur.trim());
-  return result;
+  return records;
 }
 
-function parseCSV(text) {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
-  if (lines.length < 2) return [];
-  const headers = parseCSVLine(lines[0]);
-  return lines.slice(1).map(line => {
-    const vals = parseCSVLine(line);
-    const obj  = {};
-    headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
-    return obj;
-  });
+function readRecord(src, start) {
+  const fields = [];
+  let pos = start;
+  let field = "";
+
+  while (pos < src.length) {
+    const ch = src[pos];
+
+    if (ch === '"') {
+      // Campo entre comillas — puede contener comas y saltos de línea
+      pos++;
+      while (pos < src.length) {
+        if (src[pos] === '"') {
+          if (src[pos + 1] === '"') { field += '"'; pos += 2; } // "" → "
+          else { pos++; break; }
+        } else {
+          field += src[pos++];
+        }
+      }
+    } else if (ch === ",") {
+      fields.push(field.trim());
+      field = "";
+      pos++;
+    } else if (ch === "\n") {
+      // Fin de registro
+      fields.push(field.trim());
+      return { fields, next: pos + 1 };
+    } else {
+      field += ch;
+      pos++;
+    }
+  }
+
+  // Último registro sin salto de línea al final
+  fields.push(field.trim());
+  return { fields, next: pos };
 }
 
 // ── Parsear pipeline desde campo Opportunities del CSV ──────────────────────
