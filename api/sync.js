@@ -209,12 +209,12 @@ async function fetchOpportunityMap(locationId) {
   return map;
 }
 
-// ── Conversaciones (paginado, máx 2 000) ──────────────────────────────────────
+// ── Conversaciones (paginado, máx 500 — solo para stats de agente) ────────────
 async function fetchConversations(locationId) {
   const all  = [];
   let cursor = null;
 
-  for (let page = 0; page < 20; page++) {
+  for (let page = 0; page < 5; page++) {
     try {
       const data  = await ghlGet("/conversations/search", {
         locationId,
@@ -402,28 +402,32 @@ export default async function handler(req, res) {
     console.log("🔄 Iniciando sync GHL...");
     const t0 = Date.now();
 
-    // ── Fetch paralelo inicial ────────────────────────────────────────────
-    const [{ contacts: rawContacts, meta: contactsMeta }, rawConversations, rawUsers, cfMap] =
-      await Promise.all([
-        fetchContacts(LOCATION_ID),
-        fetchConversations(LOCATION_ID).catch(e => { console.warn("convs failed:", e.message); return []; }),
-        fetchUsers(LOCATION_ID),
-        fetchCustomFieldMap(LOCATION_ID).catch(() => ({})),
-      ]);
+    // ── Todo en paralelo: contactos + opps + convs + usuarios al mismo tiempo ─
+    // Así no esperamos que las conversaciones (20+ págs) bloqueen las oportunidades
+    const [
+      { contacts: rawContacts, meta: contactsMeta },
+      rawConversations,
+      rawUsers,
+      cfMap,
+      oppMap,
+    ] = await Promise.all([
+      fetchContacts(LOCATION_ID),
+      fetchConversations(LOCATION_ID).catch(e => { console.warn("convs:", e.message); return []; }),
+      fetchUsers(LOCATION_ID),
+      fetchCustomFieldMap(LOCATION_ID).catch(() => ({})),
+      fetchOpportunityMap(LOCATION_ID),
+    ]);
 
-    console.log(`✅ Contactos: ${rawContacts.length} (${contactsMeta.pages} páginas, total GHL reportado: ${contactsMeta.totalReported})`);
+    console.log(`✅ Contactos: ${rawContacts.length} (${contactsMeta.pages} págs, total reportado: ${contactsMeta.totalReported})`);
+    console.log(`✅ Oportunidades mapeadas: ${Object.keys(oppMap).length}`);
     console.log(`✅ Conversaciones: ${rawConversations.length}`);
     console.log(`✅ Usuarios: ${rawUsers.length}`);
 
     const userMap = buildUserMap(rawUsers);
 
-    // ── Fetch secundario ──────────────────────────────────────────────────
-    const [oppMap, tasksMap] = await Promise.all([
-      fetchOpportunityMap(LOCATION_ID),
-      fetchTasksMap(LOCATION_ID, userMap),
-    ]);
+    // ── Tareas (secundario, usa userMap) ─────────────────────────────────────
+    const tasksMap = await fetchTasksMap(LOCATION_ID, userMap).catch(() => ({}));
 
-    console.log(`✅ Oportunidades mapeadas: ${Object.keys(oppMap).length}`);
     console.log(`⏱️ Sync completado en ${Date.now() - t0}ms`);
 
     // ── Normalizar ────────────────────────────────────────────────────────
