@@ -79,14 +79,19 @@ async function fetchContacts(locationId) {
   for (let page = 0; page < 20; page++) {
     try {
       const data  = await ghlGet("/contacts/", { locationId, limit: "100", startAfterId });
-      const batch = (data.contacts || []).filter(c => {
+      const raw   = data.contacts || [];
+      const batch = raw.filter(c => {
         if (!c.id || seen.has(c.id)) return false;
         seen.add(c.id);
         return true;
       });
       all.push(...batch);
-      const nextId = data.meta?.startAfterId;
-      if (batch.length < 100 || !nextId) break;
+
+      // GHL puede devolver startAfterId en meta, o usar el último ID del batch
+      const nextId = data.meta?.startAfterId
+        || (raw.length === 100 ? raw[raw.length - 1].id : null);
+
+      if (raw.length < 100 || !nextId) break;
       startAfterId = nextId;
     } catch (e) {
       console.warn("⚠️ fetchContacts page", page, e.message);

@@ -1,16 +1,16 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 const PAGE_SIZE = 20;
 
-// columns: [{ key, label, render?, sortable?, width? }]
-// rows: array of objects
 export default function DataTable({ columns, rows, emptyMessage = "Sin datos", className = "" }) {
-  const [sortKey, setSortKey]   = useState(null);
-  const [sortDir, setSortDir]   = useState("asc");
-  const [page,    setPage]      = useState(1);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  const [page,    setPage]    = useState(1);
 
-  // Ordenamiento
+  // ── Reset página cuando cambian los rows (filtros aplicados) ──────────────
+  useEffect(() => { setPage(1); }, [rows]);
+
   const sorted = useMemo(() => {
     if (!sortKey) return rows;
     return [...rows].sort((a, b) => {
@@ -22,15 +22,13 @@ export default function DataTable({ columns, rows, emptyMessage = "Sin datos", c
   }, [rows, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const slice      = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Clamp page si el total de páginas disminuye
+  const safePage   = Math.min(page, totalPages);
+  const slice      = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   function handleSort(key) {
-    if (sortKey === key) {
-      setSortDir(d => d === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
     setPage(1);
   }
 
@@ -43,7 +41,6 @@ export default function DataTable({ columns, rows, emptyMessage = "Sin datos", c
 
   return (
     <div className={`flex flex-col ${className}`}>
-      {/* Tabla */}
       <div className="overflow-x-auto rounded-xl border border-dark-700">
         <table className="w-full min-w-max border-collapse text-sm">
           <thead>
@@ -84,8 +81,7 @@ export default function DataTable({ columns, rows, emptyMessage = "Sin datos", c
                   {columns.map(col => (
                     <td key={col.key} className="px-4 py-3 text-sm text-cream">
                       {col.render ? col.render(row[col.key], row) : (
-                        <span className={!row[col.key] || row[col.key] === "(No hay datos)"
-                          ? "text-cream-dim" : ""}>
+                        <span className={!row[col.key] || row[col.key] === "(No hay datos)" ? "text-cream-dim" : ""}>
                           {row[col.key] ?? "—"}
                         </span>
                       )}
@@ -98,24 +94,23 @@ export default function DataTable({ columns, rows, emptyMessage = "Sin datos", c
         </table>
       </div>
 
-      {/* Paginación */}
       {totalPages > 1 && (
         <div className="mt-3 flex items-center justify-between text-xs text-cream-dim">
           <span>
-            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sorted.length)} de {sorted.length}
+            {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, sorted.length)} de {sorted.length}
           </span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
+              disabled={safePage === 1}
               className="flex h-7 w-7 items-center justify-center rounded-md border border-dark-600 transition-colors hover:border-dark-500 hover:text-cream disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ChevronLeft size={13} />
             </button>
-            <span className="px-2 tabular-nums">{page} / {totalPages}</span>
+            <span className="px-2 tabular-nums">{safePage} / {totalPages}</span>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
+              disabled={safePage === totalPages}
               className="flex h-7 w-7 items-center justify-center rounded-md border border-dark-600 transition-colors hover:border-dark-500 hover:text-cream disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ChevronRight size={13} />
