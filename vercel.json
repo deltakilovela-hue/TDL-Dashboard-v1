@@ -3,6 +3,9 @@
     "api/sync.js": {
       "maxDuration": 60
     },
+    "api/debug.js": {
+      "maxDuration": 30
+    },
     "api/status.js": {
       "maxDuration": 10
     }

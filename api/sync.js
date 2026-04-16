@@ -1,30 +1,55 @@
 // api/sync.js — GET /api/sync
-// Descarga contactos, conversaciones, usuarios, oportunidades y tareas de GHL.
+// Descarga contactos, conversaciones, usuarios y oportunidades de GHL.
 // Cachea el resultado en Upstash Redis por 30 min.
-// ?force=true omite el caché y re-sincroniza.
+// ?force=true  → omite caché y re-sincroniza
+// ?debug=true  → incluye meta de paginación en la respuesta
 
 import { cacheGet, cacheSet, cacheDel } from "./_lib.js";
 
-const GHL_BASE = "https://services.leadconnectorhq.com";
-const GHL_VERSION = "2021-07-28";
-const PRIORITY_PIPELINES = ["01 - Desarrollos", "02 - Cierre", "Rentas Vacacionales"];
+export const config = { maxDuration: 60 };
 
+const GHL_BASE    = "https://services.leadconnectorhq.com";
+const GHL_VERSION = "2021-07-28";
+
+const PRIORITY_PIPELINES = ["01 - Desarrollos", "02 - Cierre", "Rentas Vacacionales"];
+const ALLOWED_STATUSES   = new Set(["open", "won", "abandoned"]); // excluye "lost"
+const SKIP_PIPELINE_NAMES = ["seguimiento ia", "recepción", "recepcion"];
+
+// ── Fetch helper con timeout de 15 s por llamada ──────────────────────────────
 const headers = () => ({
   Authorization: `Bearer ${process.env.GHL_API_KEY}`,
   "Content-Type": "application/json",
   Version: GHL_VERSION,
 });
 
-// ── Fetch helper ──────────────────────────────────────────────────────────────
 async function ghlGet(path, params = {}) {
   const url = new URL(`${GHL_BASE}${path}`);
   Object.entries(params).forEach(([k, v]) => v != null && url.searchParams.set(k, v));
-  const r = await fetch(url.toString(), { headers: headers() });
+  const r = await fetch(url.toString(), {
+    headers: headers(),
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
     throw new Error(`GHL ${path} → ${r.status}: ${JSON.stringify(err)}`);
   }
   return r.json();
+}
+
+// ── Extraer cursor de la respuesta GHL ─────────────────────────────────────
+// GHL puede devolver: meta.startAfterId, meta.nextPageUrl, o nada (usamos último id)
+function extractCursor(data, batch) {
+  if (data.meta?.startAfterId) return data.meta.startAfterId;
+  // Intentar parsear nextPageUrl
+  if (data.meta?.nextPageUrl) {
+    try {
+      const u    = new URL(data.meta.nextPageUrl);
+      const sid  = u.searchParams.get("startAfterId");
+      if (sid) return sid;
+    } catch {}
+  }
+  // Fallback: id del último elemento del batch
+  return batch.length === 100 ? batch[batch.length - 1].id : null;
 }
 
 // ── Usuarios ──────────────────────────────────────────────────────────────────
@@ -53,7 +78,7 @@ function buildUserMap(rawUsers) {
 async function fetchCustomFieldMap(locationId) {
   try {
     const data = await ghlGet(`/locations/${locationId}/customFields`);
-    const map = {};
+    const map  = {};
     (data.customFields || []).forEach(f => {
       const name = f.name || "";
       if (!name) return;
@@ -70,98 +95,93 @@ async function fetchCustomFieldMap(locationId) {
   }
 }
 
-// ── Contactos (paginado, máx 2000) ───────────────────────────────────────────
+// ── Contactos (paginado, máx 2 000) ──────────────────────────────────────────
 async function fetchContacts(locationId) {
-  const all  = [];
-  const seen = new Set();
-  let startAfterId = null;
+  const all    = [];
+  const seen   = new Set();
+  let cursor   = null;
+  const meta   = { pages: 0, totalReported: null };
 
   for (let page = 0; page < 20; page++) {
     try {
-      const data  = await ghlGet("/contacts/", { locationId, limit: "100", startAfterId });
+      const data  = await ghlGet("/contacts/", {
+        locationId,
+        limit: "100",
+        ...(cursor ? { startAfterId: cursor } : {}),
+      });
       const raw   = data.contacts || [];
+      if (page === 0) meta.totalReported = data.meta?.total ?? null;
+      meta.pages++;
+
       const batch = raw.filter(c => {
         if (!c.id || seen.has(c.id)) return false;
         seen.add(c.id);
         return true;
       });
       all.push(...batch);
+      console.log(`contacts page ${page + 1}: ${raw.length} raw, ${all.length} total`);
 
-      // GHL puede devolver startAfterId en meta, o usar el último ID del batch
-      const nextId = data.meta?.startAfterId
-        || (raw.length === 100 ? raw[raw.length - 1].id : null);
-
-      if (raw.length < 100 || !nextId) break;
-      startAfterId = nextId;
+      const next = extractCursor(data, raw);
+      if (raw.length < 100 || !next || next === cursor) break;
+      cursor = next;
     } catch (e) {
       console.warn("⚠️ fetchContacts page", page, e.message);
       break;
     }
   }
-  return all;
+  return { contacts: all, meta };
 }
 
-// ── Oportunidades ─────────────────────────────────────────────────────────────
-// Statuses permitidos: open, won, abandoned  (lost = excluido)
-const ALLOWED_STATUSES = new Set(["open", "won", "abandoned"]);
-const SKIP_PIPELINE_NAMES = ["seguimiento ia", "recepción", "recepcion"];
-
-// Puntuación para elegir la "mejor" oportunidad por contacto
-// Menor = mejor prioridad
+// ── Oportunidades (paginado, máx 2 000) ──────────────────────────────────────
 function oppScore(status, pipeline) {
-  const statusScore   = status === "open" ? 0 : status === "abandoned" ? 1 : 2; // won=2
-  const pipelineScore = PRIORITY_PIPELINES.findIndex(
-    p => p.toLowerCase() === pipeline.toLowerCase()
+  const s = status === "open" ? 0 : status === "abandoned" ? 1 : 2; // won=2
+  const p = PRIORITY_PIPELINES.findIndex(
+    n => n.toLowerCase() === pipeline.toLowerCase()
   );
-  return statusScore * 10 + (pipelineScore === -1 ? 99 : pipelineScore);
+  return s * 10 + (p === -1 ? 99 : p);
 }
 
 async function fetchOpportunityMap(locationId) {
-  const map = {};
-  let startAfterId = null;
+  const map  = {};
+  let cursor = null;
 
   for (let page = 0; page < 20; page++) {
     try {
       const data = await ghlGet("/opportunities/search", {
         location_id: locationId,
         limit: "100",
-        startAfterId,
+        ...(cursor ? { startAfterId: cursor } : {}),
       });
       const opps = data.opportunities || [];
+      console.log(`opps page ${page + 1}: ${opps.length}`);
 
       opps.forEach(opp => {
-        const contactId    = opp.contactId || opp.contact?.id;
+        // GHL puede devolver contactId en distintos lugares
+        const contactId = opp.contactId || opp.contact?.id;
         if (!contactId) return;
 
         const pipelineName = opp.pipeline?.name || opp.pipelineName || "";
         const stageName    = opp.pipelineStage?.name || opp.pipelineStageName || "(No hay datos)";
         const status       = (opp.status || "open").toLowerCase();
 
-        // Excluir pipelines de skip y status "lost"
-        const pipelineLower = pipelineName.toLowerCase();
-        if (SKIP_PIPELINE_NAMES.some(s => pipelineLower.includes(s))) return;
-        if (!ALLOWED_STATUSES.has(status)) return; // descarta "lost"
-
-        // Solo pipelines principales
-        const isMain = PRIORITY_PIPELINES.some(
-          p => p.toLowerCase() === pipelineLower
-        );
+        // Excluir pipelines no relevantes y status "lost"
+        const pl = pipelineName.toLowerCase();
+        if (SKIP_PIPELINE_NAMES.some(s => pl.includes(s))) return;
+        if (!ALLOWED_STATUSES.has(status)) return;
+        const isMain = PRIORITY_PIPELINES.some(p => p.toLowerCase() === pl);
         if (!isMain) return;
 
-        const current = map[contactId];
+        const current  = map[contactId];
         const newScore = oppScore(status, pipelineName);
         const curScore = current ? oppScore(current.status, current.pipeline) : 999;
-
         if (newScore < curScore) {
           map[contactId] = { pipeline: pipelineName, stage: stageName, status };
         }
       });
 
-      // Fix paginación: GHL no siempre devuelve startAfterId en meta
-      const nextId = data.meta?.startAfterId
-        || (opps.length === 100 ? opps[opps.length - 1].id : null);
-      if (opps.length < 100 || !nextId) break;
-      startAfterId = nextId;
+      const next = extractCursor(data, opps);
+      if (opps.length < 100 || !next || next === cursor) break;
+      cursor = next;
     } catch (e) {
       console.warn("⚠️ fetchOpportunityMap page", page, e.message);
       break;
@@ -170,24 +190,33 @@ async function fetchOpportunityMap(locationId) {
   return map;
 }
 
-// ── Conversaciones (paginado, máx 2000) ──────────────────────────────────────
+// ── Conversaciones (paginado, máx 2 000) ──────────────────────────────────────
 async function fetchConversations(locationId) {
   const all  = [];
-  let startAfterId = null;
+  let cursor = null;
 
   for (let page = 0; page < 20; page++) {
     try {
-      const data  = await ghlGet("/conversations/search", { locationId, limit: "100", startAfterId });
+      const data  = await ghlGet("/conversations/search", {
+        locationId,
+        limit: "100",
+        ...(cursor ? { startAfterId: cursor } : {}),
+      });
       const batch = data.conversations || [];
       all.push(...batch);
-      if (batch.length < 100) break;
-      startAfterId = batch[batch.length - 1].id;
-    } catch { break; }
+      console.log(`convs page ${page + 1}: ${batch.length}`);
+      const next = extractCursor(data, batch);
+      if (batch.length < 100 || !next || next === cursor) break;
+      cursor = next;
+    } catch (e) {
+      console.warn("⚠️ fetchConversations page", page, e.message);
+      break;
+    }
   }
   return all;
 }
 
-// ── Tareas pendientes (intenta endpoint de localización) ──────────────────────
+// ── Tareas ────────────────────────────────────────────────────────────────────
 async function fetchTasksMap(locationId, userMap) {
   const map = {};
   try {
@@ -199,12 +228,12 @@ async function fetchTasksMap(locationId, userMap) {
       map[agentName]  = (map[agentName] || 0) + 1;
     });
   } catch (e) {
-    console.warn("⚠️ fetchTasksMap (no disponible en este plan):", e.message);
+    console.warn("⚠️ fetchTasksMap:", e.message);
   }
   return map;
 }
 
-// ── Detecta si una conversación es llamada ────────────────────────────────────
+// ── Stats por agente ──────────────────────────────────────────────────────────
 function isCallConv(c) {
   const type    = String(c.type || "").toLowerCase();
   const channel = String(c.lastMessageChannel || c.lastMessageType || "").toLowerCase();
@@ -213,50 +242,17 @@ function isCallConv(c) {
          channel.includes("call") || channel.includes("phone");
 }
 
-// ── Detalles de llamadas para obtener callStatus ──────────────────────────────
-async function fetchCallDetails(callConvs) {
-  // Máx 40 en paralelo para no superar timeouts
-  const toFetch = callConvs.slice(0, 40);
-  const results = await Promise.allSettled(
-    toFetch.map(async c => {
-      try {
-        const data = await ghlGet(`/conversations/${c.id}/messages`, { limit: "10" });
-        const msgs = Array.isArray(data.messages) ? data.messages
-                   : Array.isArray(data.messages?.messages) ? data.messages.messages : [];
-        const callMsg = msgs.find(m => m.meta?.callDuration !== undefined) ||
-                        msgs.find(m => m.messageType === "TYPE_CALL" || m.type === 10);
-        return { convId: c.id, callStatus: callMsg?.meta?.callStatus || null };
-      } catch { return { convId: c.id, callStatus: null }; }
-    })
-  );
-  const statusMap = {};
-  results.forEach(r => {
-    if (r.status === "fulfilled" && r.value) {
-      statusMap[r.value.convId] = r.value.callStatus;
-    }
-  });
-  return statusMap;
-}
-
-// ── Construir statsAgentes desde conversaciones + contactos + tareas ──────────
-function buildStatsAgentes(rawConversations, rawContacts, userMap, callStatusMap, tasksMap) {
+function buildStatsAgentes(rawConversations, rawContacts, userMap, tasksMap) {
   const stats = {};
 
   const ensure = name => {
-    if (!stats[name]) {
-      stats[name] = {
-        llamadasRealizadas:   0,
-        llamadasContestadas:  0,
-        llamadasPerdidas:     0,
-        mensajesEnviados:     0,
-        mensajesNoLeidos:     0,
-        tareasPendientes:     0,
-        contactosAsignados:   0,
-      };
-    }
+    if (!stats[name]) stats[name] = {
+      llamadasRealizadas: 0, llamadasContestadas: 0, llamadasPerdidas: 0,
+      mensajesEnviados: 0,   mensajesNoLeidos:    0,
+      tareasPendientes: 0,   contactosAsignados:  0,
+    };
   };
 
-  // Conversaciones
   rawConversations.forEach(c => {
     const agentId   = c.assignedTo || c.assignedUserId;
     const agentName = agentId ? (userMap[agentId] || agentId) : "Sin asignar";
@@ -264,12 +260,6 @@ function buildStatsAgentes(rawConversations, rawContacts, userMap, callStatusMap
 
     if (isCallConv(c)) {
       stats[agentName].llamadasRealizadas++;
-      const callStatus = callStatusMap[c.id];
-      if (callStatus === "completed" || callStatus === "answered") {
-        stats[agentName].llamadasContestadas++;
-      } else if (callStatus === "missed" || callStatus === "no-answer" || callStatus === "busy") {
-        stats[agentName].llamadasPerdidas++;
-      }
     } else {
       const dir = String(c.lastMessageDirection || "").toLowerCase();
       if (dir === "outbound") stats[agentName].mensajesEnviados++;
@@ -277,7 +267,6 @@ function buildStatsAgentes(rawConversations, rawContacts, userMap, callStatusMap
     }
   });
 
-  // Contactos asignados por agente
   rawContacts.forEach(c => {
     const agentId   = c.assignedTo;
     const agentName = agentId ? (userMap[agentId] || agentId) : "Sin asignar";
@@ -285,7 +274,6 @@ function buildStatsAgentes(rawConversations, rawContacts, userMap, callStatusMap
     stats[agentName].contactosAsignados++;
   });
 
-  // Tareas pendientes
   Object.entries(tasksMap).forEach(([agentName, count]) => {
     ensure(agentName);
     stats[agentName].tareasPendientes = count;
@@ -355,7 +343,6 @@ function normalizeContact(c, userMap, oppMap, cfMap) {
   };
 }
 
-// ── Normalizar usuario ────────────────────────────────────────────────────────
 function normalizeUser(u) {
   return {
     id:        u.id,
@@ -381,60 +368,66 @@ export default async function handler(req, res) {
     });
   }
 
-  const force = req.query?.force === "true";
+  const force     = req.query?.force === "true";
+  const debugMode = req.query?.debug === "true";
 
   // ── Intentar caché ────────────────────────────────────────────────────────
   if (!force) {
     const cached = await cacheGet();
-    if (cached) {
-      return res.json({ ...cached, fromCache: true });
-    }
+    if (cached) return res.json({ ...cached, fromCache: true });
   } else {
     await cacheDel();
   }
 
   try {
+    console.log("🔄 Iniciando sync GHL...");
+    const t0 = Date.now();
+
     // ── Fetch paralelo inicial ────────────────────────────────────────────
-    const [rawContacts, rawConversations, rawUsers, cfMap] = await Promise.all([
-      fetchContacts(LOCATION_ID),
-      fetchConversations(LOCATION_ID).catch(() => []),
-      fetchUsers(LOCATION_ID),
-      fetchCustomFieldMap(LOCATION_ID).catch(() => ({})),
-    ]);
+    const [{ contacts: rawContacts, meta: contactsMeta }, rawConversations, rawUsers, cfMap] =
+      await Promise.all([
+        fetchContacts(LOCATION_ID),
+        fetchConversations(LOCATION_ID).catch(e => { console.warn("convs failed:", e.message); return []; }),
+        fetchUsers(LOCATION_ID),
+        fetchCustomFieldMap(LOCATION_ID).catch(() => ({})),
+      ]);
+
+    console.log(`✅ Contactos: ${rawContacts.length} (${contactsMeta.pages} páginas, total GHL reportado: ${contactsMeta.totalReported})`);
+    console.log(`✅ Conversaciones: ${rawConversations.length}`);
+    console.log(`✅ Usuarios: ${rawUsers.length}`);
 
     const userMap = buildUserMap(rawUsers);
 
-    // ── Fetch secundario (depende de userMap) ─────────────────────────────
-    const callConvs = rawConversations.filter(c => isCallConv(c));
-
-    const [oppMap, callStatusMap, tasksMap] = await Promise.all([
+    // ── Fetch secundario ──────────────────────────────────────────────────
+    const [oppMap, tasksMap] = await Promise.all([
       fetchOpportunityMap(LOCATION_ID),
-      fetchCallDetails(callConvs),
       fetchTasksMap(LOCATION_ID, userMap),
     ]);
+
+    console.log(`✅ Oportunidades mapeadas: ${Object.keys(oppMap).length}`);
+    console.log(`⏱️ Sync completado en ${Date.now() - t0}ms`);
 
     // ── Normalizar ────────────────────────────────────────────────────────
     const contacts     = rawContacts.map(c => normalizeContact(c, userMap, oppMap, cfMap));
     const usuarios     = rawUsers.map(u => normalizeUser(u));
-    const statsAgentes = buildStatsAgentes(rawConversations, rawContacts, userMap, callStatusMap, tasksMap);
+    const statsAgentes = buildStatsAgentes(rawConversations, rawContacts, userMap, tasksMap);
 
     const payload = {
-      ok:            true,
-      synced:        true,
-      updatedAt:     new Date().toISOString(),
-      total:         contacts.length,
-      totalAgentes:  usuarios.length,
+      ok:           true,
+      synced:       true,
+      updatedAt:    new Date().toISOString(),
+      total:        contacts.length,
+      totalAgentes: usuarios.length,
       contacts,
       usuarios,
       statsAgentes,
+      ...(debugMode ? { _debug: { contactsMeta, oppsCount: Object.keys(oppMap).length } } : {}),
     };
 
-    // ── Cachear ───────────────────────────────────────────────────────────
     await cacheSet(payload);
-
     res.json({ ...payload, fromCache: false });
   } catch (err) {
-    console.error("sync error:", err);
+    console.error("❌ sync error:", err);
     res.status(500).json({ ok: false, error: err.message });
   }
 }

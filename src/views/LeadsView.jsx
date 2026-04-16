@@ -80,15 +80,18 @@ const PRESETS = [
 // ── Columnas de la tabla ───────────────────────────────────────────────────────
 const COLUMNS = [
   {
-    key: "nombre", label: "Nombre", width: 190,
+    key: "nombre", label: "Nombre", width: 200,
     render: (_, row) => (
       <div>
         <p className="font-medium text-cream leading-tight">{row.nombre || "—"}</p>
-        <p className="text-[11px] text-cream-dim mt-0.5 font-mono">{row.phone}</p>
+        <p className="text-[11px] text-cream-dim mt-0.5 font-mono">{row.phone !== "(No hay datos)" ? row.phone : "—"}</p>
+        {row._fromCSV && <span className="text-[10px] text-gold-400/70">CSV</span>}
       </div>
     ),
   },
-  { key: "assignedTo",    label: "Asesor",   width: 145 },
+  { key: "assignedTo",    label: "Asesor",   width: 145,
+    render: (v) => <span className={!v || v === "(No hay datos)" ? "text-cream-dim" : "text-cream"}>{v || "—"}</span>,
+  },
   { key: "source",        label: "Fuente",   width: 130 },
   {
     key: "pipelineName", label: "Pipeline", width: 160,
@@ -140,8 +143,9 @@ function SelectFilter({ label, value, onChange, options }) {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function LeadsView() {
-  const { data, loading } = useData();
+  const { data, loading, csvCount } = useData();
   const contacts = data?.contacts ?? [];
+  const ghlCount = contacts.filter(c => !c._fromCSV).length;
 
   const [filterAgent,    setFilterAgent]    = useState("Todos");
   const [filterSource,   setFilterSource]   = useState("Todos");
@@ -347,6 +351,11 @@ export default function LeadsView() {
               )}
               <span className="self-end pb-1.5 text-xs text-cream-dim tabular-nums">
                 {rows.length} de {contacts.length} leads
+                {ghlCount > 0 && (
+                  <span className="ml-1 text-cream-dim/60">
+                    · {ghlCount} GHL {csvCount > 0 ? `+ ${csvCount} CSV` : ""}
+                  </span>
+                )}
               </span>
             </div>
           </div>
