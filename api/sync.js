@@ -235,16 +235,26 @@ export default async function handler(req, res) {
       role:  u.role  || "",
     }));
 
-    // Conversaciones trimadas con nombre del asesor ya resuelto
-    const conversations = rawConversations.map(c => ({
-      id:                   c.id,
-      contactId:            c.contactId,
-      assignedToName:       c.assignedTo ? (userMap[c.assignedTo] || "(Sin asignar)") : "(Sin asignar)",
-      lastMessageDate:      c.lastMessageDate || c.dateUpdated || null,
-      lastMessageDirection: c.lastMessageDirection || null,
-      unreadCount:          Number(c.unreadCount) || 0,
-      isCall:               isCallConv(c),
-    }));
+    // Conversaciones normalizadas
+    // isCall se basa en el TYPE del canal (phone), NO en el último mensaje.
+    // Así una conversación de WhatsApp que tuvo una llamada mezclada
+    // no pierde su clasificación de "mensaje".
+    const conversations = rawConversations.map(c => {
+      const channelType = String(c.type || "").toLowerCase();
+      const isCall = channelType === "type_phone" || channelType === "phone" ||
+                     channelType === "6" || channelType === "call";
+      return {
+        id:                   c.id,
+        contactId:            c.contactId,
+        assignedToName:       c.assignedTo ? (userMap[c.assignedTo] || "(Sin asignar)") : "(Sin asignar)",
+        lastMessageDate:      c.lastMessageDate || c.dateUpdated || null,
+        lastMessageDirection: c.lastMessageDirection || null,
+        unreadCount:          Number(c.unreadCount) || 0,
+        isCall,
+        // pasar channelType crudo para debug
+        channelType,
+      };
+    });
 
     console.log(`✅ contactos:${contacts.length} opps:${Object.keys(oppMap).length} convs:${conversations.length} en ${Date.now()-t0}ms`);
 

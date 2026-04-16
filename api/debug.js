@@ -33,18 +33,18 @@ export default async function handler(req, res) {
       // Mostrar TODOS los campos del primer objeto para saber qué existe
       firstRaw: convs[0] || null,
       // Muestra los campos más importantes de los primeros 10
-      sample: convs.slice(0, 10).map(c => ({
-        id: c.id,
-        type: c.type,
-        lastMessageType:       c.lastMessageType,
-        lastMessageDate:       c.lastMessageDate,
-        lastMessageDateMs:     typeof c.lastMessageDate === "number" ? new Date(c.lastMessageDate).toISOString() : null,
-        lastMessageDirection:  c.lastMessageDirection,
-        lastMessageChannel:    c.lastMessageChannel,
-        unreadCount:           c.unreadCount,
-        assignedTo:            c.assignedTo,
-        dateUpdated:           c.dateUpdated,
-        contactId:             c.contactId,
+      // Campos clave para entender cómo clasificar la conversación
+      keyFields: convs.slice(0, 10).map(c => ({
+        id:                   c.id,
+        TYPE:                 c.type,               // ← clasificación del CANAL (no cambia)
+        lastMessageType:      c.lastMessageType,    // ← tipo del último mensaje
+        lastMessageDirection: c.lastMessageDirection,
+        lastMessageChannel:   c.lastMessageChannel,
+        lastMessageDate:      c.lastMessageDate,
+        lastMessageDateISO:   typeof c.lastMessageDate === "number"
+          ? new Date(c.lastMessageDate).toISOString() : c.lastMessageDate,
+        unreadCount:          c.unreadCount,
+        assignedTo:           c.assignedTo,
       })),
     });
   }
