@@ -1,0 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Playfair+Display:wght@600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* ── Fondo / estructura ── */
+  --color-dark-950: #050b10;
+  --color-dark-900: #0a1420;
+  --color-dark-800: #0f1923;
+  --color-dark-750: #121e2c;
+  --color-dark-700: #162030;
+  --color-dark-600: #1e2d40;
+  --color-dark-500: #24354d;
+  --color-dark-400: #2e4260;
+
+  /* ── Acento dorado ── */
+  --color-gold-300: #e8cc90;
+  --color-gold-400: #d4a862;
+  --color-gold-500: #c8974e;
+  --color-gold-600: #a87a3a;
+  --color-gold-700: #8a6128;
+
+  /* ── Texto ── */
+  --color-cream:       #f0ead6;
+  --color-cream-muted: #9a9080;
+  --color-cream-dim:   #6b6358;
+
+  /* ── Semánticos ── */
+  --color-success-400: #6db87a;
+  --color-success-500: #52a361;
+  --color-warning-400: #e8824a;
+  --color-info-400:    #4a9fd4;
+  --color-info-500:    #4a7fa5;
+  --color-danger-400:  #e05c5c;
+  --color-danger-500:  #c44b4b;
+
+  /* ── Navy ── */
+  --color-navy-400: #2a4a80;
+  --color-navy-500: #1a2b4a;
+
+  /* ── Tipografías ── */
+  --font-sans:  'Inter', system-ui, sans-serif;
+  --font-mono:  'DM Mono', monospace;
+  --font-serif: 'Playfair Display', serif;
+}
+
+/* ── Reset base ── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--color-dark-900);
+  color: var(--color-cream);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100dvh;
+}
+
+/* ── Scrollbar personalizado ── */
+::-webkit-scrollbar            { width: 5px; height: 5px; }
+::-webkit-scrollbar-track      { background: var(--color-dark-800); }
+::-webkit-scrollbar-thumb      { background: var(--color-dark-400); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover{ background: var(--color-gold-600); }
+
+/* ── Selección de texto ── */
+::selection { background: color-mix(in srgb, var(--color-gold-500) 30%, transparent); }
+
+/* ── Transición global suave ── */
+* { transition-property: color, background-color, border-color, opacity, box-shadow;
+    transition-duration: 150ms; transition-timing-function: ease; }
