@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp } from "lucide-react";
+import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp, FileText } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import ContactModal from "../components/ContactModal.jsx";
 
@@ -251,12 +251,23 @@ const FORM_FIELDS = [
   { key: "medioContacto",  label: "Medio de contacto"  },
 ];
 
+// ── Campos de notas de actividad ──────────────────────────────────────────────
+const NOTE_FIELDS = [
+  { key: "notaPrimerContacto", label: "Nota primer contacto" },
+  { key: "notaSeguimiento",    label: "Nota seguimiento"     },
+  { key: "notaCierre",         label: "Nota cierre"          },
+];
+
+function hasValue(v) { return v && v !== "(No hay datos)"; }
+
 function formScore(contact) {
-  const filled = FORM_FIELDS.filter(f => {
-    const v = contact[f.key];
-    return v && v !== "(No hay datos)";
-  }).length;
+  const filled = FORM_FIELDS.filter(f => hasValue(contact[f.key])).length;
   return { filled, total: FORM_FIELDS.length, pct: Math.round((filled / FORM_FIELDS.length) * 100) };
+}
+
+// Cuántas notas tiene llenadas este contacto
+function noteScore(contact) {
+  return NOTE_FIELDS.filter(f => hasValue(contact[f.key])).length;
 }
 
 // ── GHL lastMessageDirection puede ser string o número ────────────────────────
@@ -424,6 +435,7 @@ function AdvisorCard({ advisor, idx, onSelectContact }) {
             <Stat icon={Inbox}         label="Sin leer"        value={advisor.mensajesPendientes}  color={advisor.mensajesPendientes > 0 ? "danger" : "muted"} />
             <Stat icon={Phone}         label="Llamadas"         value={advisor.llamadas}            color={advisor.llamadas > 0           ? "gold"   : "muted"} />
             <Stat icon={PhoneCall}     label="Salientes"        value={advisor.llamadasSalientes}   color={advisor.llamadasSalientes > 0  ? "green"  : "muted"} />
+            <Stat icon={FileText}      label="Notas"            value={advisor.notasLlenadas || 0}  color={advisor.notasLlenadas > 0      ? "gold"   : "muted"} />
           </div>
         </div>
 
@@ -520,7 +532,10 @@ export default function AdvisorWeeklyView({ week }) {
         const act  = deep
           ? { ...live, mensajesEnviados: deep.mensajesEnviados, llamadas: deep.llamadas, llamadasSalientes: deep.llamadasSalientes, llamadasContestadas: deep.llamadasContestadas }
           : live;
-        return { name, contacts: contactsMap[name] || [], ...act, hasDeepData: !!deep };
+        const contactList = contactsMap[name] || [];
+        // Contar notas llenadas en los contactos de este asesor
+        const notasLlenadas = contactList.reduce((sum, c) => sum + noteScore(c), 0);
+        return { name, contacts: contactList, ...act, notasLlenadas, hasDeepData: !!deep };
       })
       .sort((a, b) => {
         const sa = a.mensajesEnviados + a.llamadas;
@@ -532,9 +547,10 @@ export default function AdvisorWeeklyView({ week }) {
 
   const totals = useMemo(() => ({
     activos:    advisors.filter(a => a.mensajesEnviados + a.llamadas > 0).length,
-    mensajes:   advisors.reduce((s, a) => s + a.mensajesEnviados,  0),
+    mensajes:   advisors.reduce((s, a) => s + a.mensajesEnviados,   0),
     pendientes: advisors.reduce((s, a) => s + a.mensajesPendientes, 0),
     llamadas:   advisors.reduce((s, a) => s + a.llamadas,           0),
+    notas:      advisors.reduce((s, a) => s + (a.notasLlenadas||0), 0),
   }), [advisors]);
 
   if (loading && !data) {
@@ -566,12 +582,13 @@ export default function AdvisorWeeklyView({ week }) {
       )}
 
       {/* Resumen */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {[
           { icon: Users,         label: "Asesores activos",  value: totals.activos,    sub: `de ${advisors.length} en total` },
           { icon: MessageSquare, label: "Mensajes enviados", value: totals.mensajes,   sub: "esta semana" },
           { icon: Inbox,         label: "Sin leer",          value: totals.pendientes, sub: "pendientes",  warn: totals.pendientes > 0 },
           { icon: Phone,         label: "Llamadas",          value: totals.llamadas,   sub: "esta semana" },
+          { icon: FileText,      label: "Notas llenadas",    value: totals.notas,      sub: "en contactos" },
         ].map(({ icon: Icon, label, value, sub, warn }) => (
           <div key={label} className="rounded-xl border border-dark-700 bg-dark-900 p-4">
             <div className="flex items-start justify-between">
