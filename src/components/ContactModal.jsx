@@ -1,6 +1,20 @@
 import { useEffect, useState, useCallback } from "react";
 import { X, MessageSquare, Phone, FileText, PhoneCall, PhoneMissed, PhoneIncoming, ChevronDown, ChevronUp } from "lucide-react";
 
+// Elimina etiquetas HTML y decodifica entidades básicas
+function stripHtml(str) {
+  if (!str) return "";
+  return str
+    .replace(/<[^>]*>/g, "")          // quita <tag ...>
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
+}
+
 function formatDate(str) {
   if (!str) return "—";
   const d = new Date(typeof str === "number" ? str : str);
@@ -47,7 +61,7 @@ function MessageBubble({ msg }) {
           : "bg-zinc-800 text-zinc-200 rounded-bl-sm"
       }`}>
         {msg.body
-          ? <p className="whitespace-pre-wrap leading-relaxed">{msg.body}</p>
+          ? <p className="whitespace-pre-wrap leading-relaxed">{stripHtml(msg.body)}</p>
           : <p className="italic opacity-50">{msg.attachments > 0 ? `📎 ${msg.attachments} adjunto(s)` : "(Sin texto)"}</p>
         }
         <p className={`mt-1 text-[10px] ${out ? "text-gold-400/50 text-right" : "text-zinc-500"}`}>
@@ -230,15 +244,42 @@ export default function ContactModal({ contact, onClose }) {
           {/* TAB: Notas */}
           {!loading && !error && tab === "notas" && (
             <div className="flex flex-col gap-3 p-4">
-              {notes.length === 0 ? (
+
+              {/* Suma de notas del agente */}
+              {contact.sumaNotas && contact.sumaNotas !== "(No hay datos)" && (
+                <div className="flex items-center gap-2 rounded-lg bg-gold-500/10 border border-gold-500/20 px-3 py-2">
+                  <FileText size={13} className="text-gold-400 shrink-0" />
+                  <span className="text-xs text-gold-300">
+                    <strong className="text-gold-400">{contact.sumaNotas}</strong> notas registradas en total (campo GHL)
+                  </span>
+                </div>
+              )}
+
+              {/* Historial de notas para clientes */}
+              {contact.historialNotas && contact.historialNotas !== "(No hay datos)" && (
+                <div className="rounded-xl border border-zinc-700 bg-zinc-800/40 p-3">
+                  <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mb-2">
+                    📋 Historial de notas para clientes
+                  </p>
+                  <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">
+                    {stripHtml(contact.historialNotas)}
+                  </p>
+                </div>
+              )}
+
+              {/* Notas de GHL */}
+              {notes.length === 0 && !contact.historialNotas && contact.historialNotas === "(No hay datos)" ? (
                 <p className="text-center text-sm text-zinc-500 py-8">Sin notas registradas</p>
-              ) : (
-                notes.map((n, i) => (
-                  <div key={n.id || i} className="rounded-xl border border-zinc-800 bg-zinc-800/40 p-3">
-                    <p className="text-xs text-zinc-500 mb-1.5">{formatDate(n.dateAdded)}</p>
-                    <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">{n.body || "(Sin contenido)"}</p>
-                  </div>
-                ))
+              ) : notes.length > 0 && (
+                <>
+                  <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider px-1">Notas GHL</p>
+                  {notes.map((n, i) => (
+                    <div key={n.id || i} className="rounded-xl border border-zinc-800 bg-zinc-800/40 p-3">
+                      <p className="text-xs text-zinc-500 mb-1.5">{formatDate(n.dateAdded)}</p>
+                      <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">{stripHtml(n.body) || "(Sin contenido)"}</p>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
           )}

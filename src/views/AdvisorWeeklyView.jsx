@@ -435,7 +435,7 @@ function AdvisorCard({ advisor, idx, onSelectContact }) {
             <Stat icon={Inbox}         label="Sin leer"        value={advisor.mensajesPendientes}  color={advisor.mensajesPendientes > 0 ? "danger" : "muted"} />
             <Stat icon={Phone}         label="Llamadas"         value={advisor.llamadas}            color={advisor.llamadas > 0           ? "gold"   : "muted"} />
             <Stat icon={PhoneCall}     label="Salientes"        value={advisor.llamadasSalientes}   color={advisor.llamadasSalientes > 0  ? "green"  : "muted"} />
-            <Stat icon={FileText}      label="Notas"            value={advisor.notasLlenadas || 0}  color={advisor.notasLlenadas > 0      ? "gold"   : "muted"} />
+            <Stat icon={FileText}      label="Notas reg."       value={advisor.sumaNotas     || 0}  color={advisor.sumaNotas     > 0      ? "gold"   : "muted"} />
           </div>
         </div>
 
@@ -533,9 +533,14 @@ export default function AdvisorWeeklyView({ week }) {
           ? { ...live, mensajesEnviados: deep.mensajesEnviados, llamadas: deep.llamadas, llamadasSalientes: deep.llamadasSalientes, llamadasContestadas: deep.llamadasContestadas }
           : live;
         const contactList = contactsMap[name] || [];
-        // Contar notas llenadas en los contactos de este asesor
+        // Contar notas llenadas (campos de actividad) en los contactos de este asesor
         const notasLlenadas = contactList.reduce((sum, c) => sum + noteScore(c), 0);
-        return { name, contacts: contactList, ...act, notasLlenadas, hasDeepData: !!deep };
+        // Sumar el campo numérico "Suma de notas de agente" de cada contacto
+        const sumaNotas = contactList.reduce((sum, c) => {
+          const v = Number(c.sumaNotas);
+          return sum + (isNaN(v) ? 0 : v);
+        }, 0);
+        return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep };
       })
       .sort((a, b) => {
         const sa = a.mensajesEnviados + a.llamadas;
@@ -551,6 +556,7 @@ export default function AdvisorWeeklyView({ week }) {
     pendientes: advisors.reduce((s, a) => s + a.mensajesPendientes, 0),
     llamadas:   advisors.reduce((s, a) => s + a.llamadas,           0),
     notas:      advisors.reduce((s, a) => s + (a.notasLlenadas||0), 0),
+    sumaNotas:  advisors.reduce((s, a) => s + (a.sumaNotas||0),    0),
   }), [advisors]);
 
   if (loading && !data) {
@@ -582,13 +588,14 @@ export default function AdvisorWeeklyView({ week }) {
       )}
 
       {/* Resumen */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
           { icon: Users,         label: "Asesores activos",  value: totals.activos,    sub: `de ${advisors.length} en total` },
           { icon: MessageSquare, label: "Mensajes enviados", value: totals.mensajes,   sub: "esta semana" },
           { icon: Inbox,         label: "Sin leer",          value: totals.pendientes, sub: "pendientes",  warn: totals.pendientes > 0 },
           { icon: Phone,         label: "Llamadas",          value: totals.llamadas,   sub: "esta semana" },
-          { icon: FileText,      label: "Notas llenadas",    value: totals.notas,      sub: "en contactos" },
+          { icon: FileText,      label: "Notas llenadas",    value: totals.notas,      sub: "campos activos" },
+          { icon: FileText,      label: "Total notas reg.",   value: totals.sumaNotas,  sub: "suma del campo GHL" },
         ].map(({ icon: Icon, label, value, sub, warn }) => (
           <div key={label} className="rounded-xl border border-dark-700 bg-dark-900 p-4">
             <div className="flex items-start justify-between">

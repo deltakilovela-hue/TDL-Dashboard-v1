@@ -203,6 +203,9 @@ function normalizeContact(c, userMap, oppMap, cfMap) {
     notaPrimerContacto: get("comentario_de_nota_seguimiento_frio_"),  // "Comentario de NOTA primer contacto"
     notaSeguimiento:    get("comentario_de_seguimiento_externo"),      // "Comentario de seguimiento externo"
     notaCierre:         get("comentario_nota_cita_por_confirmar"),     // "Comentario NOTA Cierre comercial"
+    // ── Historial y contador de notas ──────────────────────────────────────────
+    sumaNotas:          get("suma_de_notas_de_agente"),                // NUMERICAL — total notas registradas
+    historialNotas:     get("historial_de_notas_para_clientes"),       // LARGE_TEXT — historial completo
   };
 }
 
