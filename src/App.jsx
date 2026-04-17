@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DataProvider } from "./contexts/DataContext.jsx";
 import Navbar from "./components/Navbar.jsx";
 import AdvisorWeeklyView from "./views/AdvisorWeeklyView.jsx";
@@ -23,6 +23,13 @@ function Dashboard() {
   const prevWeek    = () => setWeek(w => getWeekOf(new Date(w.from.getTime() - 7 * 86_400_000)));
   const nextWeek    = () => setWeek(w => getWeekOf(new Date(w.to.getTime() + 1)));
   const currentWeek = () => setWeek(getWeekOf());
+
+  // Escuchar el evento de navegación a semana desde el historial
+  useEffect(() => {
+    const handler = (e) => setWeek({ from: new Date(e.detail.from), to: new Date(e.detail.to) });
+    window.addEventListener("tdl:gotoweek", handler);
+    return () => window.removeEventListener("tdl:gotoweek", handler);
+  }, []);
 
   const isCurrentWeek = getWeekOf().from.toDateString() === week.from.toDateString();
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database } from "lucide-react";
+import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import ContactModal from "../components/ContactModal.jsx";
 
@@ -27,6 +27,219 @@ function sumDeepStats(deepStats, advisorName, from, to) {
     cursor.setDate(cursor.getDate() + 1);
   }
   return found ? result : null;
+}
+
+// ── Construir historial semana a semana desde deepStats ───────────────────────
+function getWeekOf(anchor) {
+  const d   = new Date(anchor);
+  const day = d.getDay();
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  mon.setHours(0, 0, 0, 0);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  sun.setHours(23, 59, 59, 999);
+  return { from: mon, to: sun };
+}
+
+function buildWeeklyHistory(deepStats, advisorName, daysBack = 90) {
+  const advisorData = deepStats?.dailyStats?.[advisorName];
+  if (!advisorData) return [];
+
+  const today   = new Date();
+  const earliest = new Date(today.getTime() - daysBack * 86_400_000);
+  const firstWeek = getWeekOf(earliest);
+
+  const weeks = [];
+  const cursor = new Date(firstWeek.from);
+
+  while (cursor <= today) {
+    const weekFrom = new Date(cursor);
+    const weekTo   = new Date(cursor);
+    weekTo.setDate(cursor.getDate() + 6);
+    weekTo.setHours(23, 59, 59, 999);
+
+    const stats = { mensajesEnviados: 0, llamadas: 0, llamadasSalientes: 0, llamadasContestadas: 0, llamadasPerdidas: 0 };
+    let hasData = false;
+
+    const c = new Date(weekFrom);
+    while (c <= weekTo && c <= today) {
+      const key = c.toISOString().split("T")[0];
+      const day = advisorData[key];
+      if (day) {
+        hasData = true;
+        stats.mensajesEnviados    += day.mensajesEnviados    || 0;
+        stats.llamadas            += day.llamadas            || 0;
+        stats.llamadasSalientes   += day.llamadasSalientes   || 0;
+        stats.llamadasContestadas += day.llamadasContestadas || 0;
+        stats.llamadasPerdidas    += day.llamadasPerdidas    || 0;
+      }
+      c.setDate(c.getDate() + 1);
+    }
+
+    weeks.push({ from: weekFrom, to: weekTo, ...stats, hasData });
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  return weeks.reverse(); // más reciente primero
+}
+
+function formatWeekRange(from, to) {
+  const opts = { day: "numeric", month: "short" };
+  return `${from.toLocaleDateString("es-MX", opts)} – ${to.toLocaleDateString("es-MX", { day: "numeric", month: "short" })}`;
+}
+
+// ── Historial semanal de un asesor ────────────────────────────────────────────
+function AdvisorHistory({ advisorName, deepStats, currentWeek, onWeekClick }) {
+  const weeks = useMemo(
+    () => buildWeeklyHistory(deepStats, advisorName),
+    [deepStats, advisorName]
+  );
+
+  if (!deepStats?.dailyStats) {
+    return (
+      <div className="rounded-xl border border-gold-500/20 bg-gold-500/5 p-4 text-sm text-gold-400">
+        <Zap size={13} className="inline mr-1" />
+        El historial semana a semana requiere el job nocturno de GitHub Actions.
+      </div>
+    );
+  }
+
+  const activeWeeks = weeks.filter(w => w.hasData);
+  if (activeWeeks.length === 0) {
+    return (
+      <div className="rounded-xl border border-dark-700 bg-dark-900 p-6 text-center text-sm text-cream-dim">
+        Sin actividad registrada en los últimos 90 días para <strong className="text-cream">{advisorName}</strong>.
+      </div>
+    );
+  }
+
+  // Máximos para escalar las barras
+  const maxMsg  = Math.max(...weeks.map(w => w.mensajesEnviados), 1);
+  const maxCall = Math.max(...weeks.map(w => w.llamadas), 1);
+
+  const isCurrentWeekFn = (w) =>
+    w.from.toDateString() === currentWeek.from.toDateString();
+
+  return (
+    <div className="rounded-2xl border border-dark-700 bg-dark-900 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-dark-700">
+        <TrendingUp size={15} className="text-gold-400" />
+        <div>
+          <p className="font-semibold text-cream">{advisorName}</p>
+          <p className="text-xs text-cream-dim">Historial de actividad — últimas {weeks.length} semanas</p>
+        </div>
+        <div className="ml-auto flex items-center gap-4 text-[11px] text-cream-dim">
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-gold-500/60 inline-block" /> Mensajes</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-info-400/60 inline-block" /> Llamadas</span>
+        </div>
+      </div>
+
+      {/* Tabla / barras */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[11px] text-cream-dim border-b border-dark-700/60">
+              <th className="text-left px-5 py-2.5 font-medium">Semana</th>
+              <th className="text-right px-3 py-2.5 font-medium w-20">Msj.</th>
+              <th className="px-3 py-2.5 w-40 hidden md:table-cell"></th>
+              <th className="text-right px-3 py-2.5 font-medium w-20">Llamadas</th>
+              <th className="px-3 py-2.5 w-40 hidden md:table-cell"></th>
+              <th className="text-right px-3 py-2.5 font-medium w-20">Contest.</th>
+              <th className="text-right px-3 py-2.5 font-medium w-20">Perdidas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {weeks.map((w, i) => {
+              const isCurrent = isCurrentWeekFn(w);
+              const msgPct  = Math.round((w.mensajesEnviados / maxMsg)  * 100);
+              const callPct = Math.round((w.llamadas         / maxCall) * 100);
+
+              return (
+                <tr
+                  key={i}
+                  onClick={() => w.hasData && onWeekClick && onWeekClick(w)}
+                  className={[
+                    "border-b border-dark-700/40 transition-colors",
+                    isCurrent ? "bg-gold-500/8 border-l-2 border-l-gold-500" : "",
+                    w.hasData ? "cursor-pointer hover:bg-dark-800/60" : "opacity-40",
+                  ].join(" ")}
+                >
+                  {/* Semana */}
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2">
+                      {isCurrent && <span className="text-[9px] bg-gold-500/20 text-gold-400 px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wide">Actual</span>}
+                      <span className={`text-xs ${isCurrent ? "text-gold-300 font-medium" : "text-cream-dim"}`}>
+                        {formatWeekRange(w.from, w.to)}
+                      </span>
+                    </div>
+                  </td>
+
+                  {/* Mensajes count */}
+                  <td className="px-3 py-3 text-right">
+                    <span className={`text-sm font-bold tabular-nums ${w.mensajesEnviados > 0 ? "text-gold-400" : "text-cream-dim"}`}>
+                      {w.mensajesEnviados}
+                    </span>
+                  </td>
+
+                  {/* Barra mensajes */}
+                  <td className="px-3 py-3 hidden md:table-cell">
+                    <div className="h-2 w-full rounded-full bg-dark-700">
+                      <div
+                        className="h-2 rounded-full bg-gold-500/60 transition-all"
+                        style={{ width: `${msgPct}%` }}
+                      />
+                    </div>
+                  </td>
+
+                  {/* Llamadas count */}
+                  <td className="px-3 py-3 text-right">
+                    <span className={`text-sm font-bold tabular-nums ${w.llamadas > 0 ? "text-info-400" : "text-cream-dim"}`}>
+                      {w.llamadas}
+                    </span>
+                  </td>
+
+                  {/* Barra llamadas */}
+                  <td className="px-3 py-3 hidden md:table-cell">
+                    <div className="h-2 w-full rounded-full bg-dark-700">
+                      <div
+                        className="h-2 rounded-full bg-info-400/60 transition-all"
+                        style={{ width: `${callPct}%` }}
+                      />
+                    </div>
+                  </td>
+
+                  {/* Contestadas */}
+                  <td className="px-3 py-3 text-right">
+                    <span className={`text-sm font-bold tabular-nums ${w.llamadasContestadas > 0 ? "text-success-400" : "text-cream-dim"}`}>
+                      {w.llamadasContestadas}
+                    </span>
+                  </td>
+
+                  {/* Perdidas */}
+                  <td className="px-3 py-3 text-right">
+                    <span className={`text-sm font-bold tabular-nums ${w.llamadasPerdidas > 0 ? "text-danger-400" : "text-cream-dim"}`}>
+                      {w.llamadasPerdidas}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Totales 90 días */}
+      <div className="flex flex-wrap gap-4 px-5 py-3 border-t border-dark-700/60 bg-dark-800/30 text-xs text-cream-dim">
+        <span>90 días: </span>
+        <span className="text-gold-400 font-medium">{activeWeeks.reduce((s, w) => s + w.mensajesEnviados, 0)} mensajes</span>
+        <span className="text-info-400 font-medium">{activeWeeks.reduce((s, w) => s + w.llamadas, 0)} llamadas</span>
+        <span className="text-success-400 font-medium">{activeWeeks.reduce((s, w) => s + w.llamadasContestadas, 0)} contestadas</span>
+        <span className="text-danger-400 font-medium">{activeWeeks.reduce((s, w) => s + w.llamadasPerdidas, 0)} perdidas</span>
+      </div>
+    </div>
+  );
 }
 
 // ── Campos del formulario ─────────────────────────────────────────────────────
@@ -248,6 +461,7 @@ export default function AdvisorWeeklyView({ week }) {
   const { data, deepStats, loading, error } = useData();
   const usingDeep = !!deepStats?.dailyStats;
   const [selectedContact, setSelectedContact] = useState(null);
+  const [filterAdvisor,   setFilterAdvisor]   = useState(null); // nombre del asesor filtrado
 
   const advisors = useMemo(() => {
     if (!data) return [];
@@ -386,18 +600,71 @@ export default function AdvisorWeeklyView({ week }) {
         }
       </div>
 
-      {/* Tarjetas */}
+      {/* ── Filtro de asesores ── */}
+      {advisors.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-cream-dim shrink-0">Filtrar:</span>
+          <button
+            onClick={() => setFilterAdvisor(null)}
+            className={[
+              "rounded-full px-3 py-1 text-xs font-medium transition-all border",
+              !filterAdvisor
+                ? "bg-gold-500/20 text-gold-400 border-gold-500/40"
+                : "border-dark-600 text-cream-dim hover:border-dark-500 hover:text-cream",
+            ].join(" ")}
+          >
+            Todos
+          </button>
+          {advisors.map((a) => (
+            <button
+              key={a.name}
+              onClick={() => setFilterAdvisor(prev => prev === a.name ? null : a.name)}
+              className={[
+                "rounded-full px-3 py-1 text-xs font-medium transition-all border flex items-center gap-1.5",
+                filterAdvisor === a.name
+                  ? "bg-gold-500/20 text-gold-400 border-gold-500/40"
+                  : "border-dark-600 text-cream-dim hover:border-dark-500 hover:text-cream",
+              ].join(" ")}
+            >
+              {initials(a.name)}
+              <span className="hidden sm:inline">{a.name.split(" ")[0]}</span>
+              {filterAdvisor === a.name && (
+                <X size={10} className="opacity-60" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Historial del asesor seleccionado ── */}
+      {filterAdvisor && (
+        <AdvisorHistory
+          advisorName={filterAdvisor}
+          deepStats={deepStats}
+          currentWeek={week}
+          onWeekClick={(w) => {
+            // Al hacer clic en una semana del historial, navegar a esa semana
+            // Comunicamos hacia arriba via un evento de window para simplificar
+            window.dispatchEvent(new CustomEvent("tdl:gotoweek", { detail: w }));
+          }}
+        />
+      )}
+
+      {/* ── Tarjetas ── */}
       {advisors.length === 0 ? (
         <div className="flex h-40 items-center justify-center rounded-xl border border-dark-700 bg-dark-900">
           <p className="text-sm text-cream-dim">Sin datos. Presiona Sincronizar.</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {advisors.map((advisor, i) => (
+          {(filterAdvisor
+            ? advisors.filter(a => a.name === filterAdvisor)
+            : advisors
+          ).map((advisor, i) => (
             <AdvisorCard
               key={advisor.name}
               advisor={advisor}
-              idx={i}
+              idx={advisors.indexOf(advisor)}
               onSelectContact={setSelectedContact}
             />
           ))}
