@@ -24,12 +24,24 @@ const DAYS_BACK      = 90;   // mirar 90 días hacia atrás
 const BATCH_SIZE     = 10;   // conversaciones en paralelo
 const DELAY_MS       = 500;  // pausa entre batches (respetar rate limit GHL)
 
-const { GHL_API_KEY, GHL_LOCATION_ID, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN } = process.env;
+const { GHL_API_KEY, GHL_LOCATION_ID, UPSTASH_REDIS_REST_TOKEN } = process.env;
+const RAW_REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 
-if (!GHL_API_KEY || !GHL_LOCATION_ID || !UPSTASH_REDIS_REST_URL || !UPSTASH_REDIS_REST_TOKEN) {
+if (!GHL_API_KEY || !GHL_LOCATION_ID || !RAW_REDIS_URL || !UPSTASH_REDIS_REST_TOKEN) {
   console.error("❌ Faltan variables de entorno. Verifica los GitHub Secrets.");
   process.exit(1);
 }
+
+// Limpiar credenciales embebidas en la URL (https://user:pass@host → https://host)
+function sanitizeUrl(raw) {
+  try {
+    const u = new URL(raw);
+    u.username = "";
+    u.password = "";
+    return u.toString();
+  } catch { return raw; }
+}
+const UPSTASH_REDIS_REST_URL = sanitizeUrl(RAW_REDIS_URL);
 
 // ── GHL fetch helper ──────────────────────────────────────────────────────────
 async function ghlGet(path, params = {}) {
