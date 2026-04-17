@@ -1,9 +1,10 @@
 name: Sync GHL Deep Stats
 
 on:
-  # Corre automáticamente cada noche a las 2am hora México (UTC-6 → 8am UTC)
+  # Corre cada 2 horas (hora México UTC-6):
+  #   0am, 2am, 4am, 6am, 8am, 10am, 12pm, 2pm, 4pm, 6pm, 8pm, 10pm
   schedule:
-    - cron: '0 8 * * *'
+    - cron: '0 */2 * * *'
 
   # También se puede lanzar manualmente desde GitHub Actions
   workflow_dispatch:
