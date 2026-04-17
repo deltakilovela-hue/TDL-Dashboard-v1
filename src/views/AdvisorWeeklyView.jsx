@@ -1,6 +1,32 @@
 import { useMemo, useState } from "react";
-import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp } from "lucide-react";
+import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
+
+// ── Suma stats de deep (históricas) para un asesor en el rango de fechas ──────
+function sumDeepStats(deepStats, advisorName, from, to) {
+  const advisorData = deepStats?.dailyStats?.[advisorName];
+  if (!advisorData) return null;
+
+  const result = { mensajesEnviados: 0, llamadas: 0, llamadasSalientes: 0, llamadasContestadas: 0, llamadasPerdidas: 0 };
+  let found = false;
+
+  // Iterar día a día dentro del rango
+  const cursor = new Date(from);
+  while (cursor <= to) {
+    const key  = cursor.toISOString().split("T")[0];
+    const day  = advisorData[key];
+    if (day) {
+      found = true;
+      result.mensajesEnviados    += day.mensajesEnviados    || 0;
+      result.llamadas            += day.llamadas            || 0;
+      result.llamadasSalientes   += day.llamadasSalientes   || 0;
+      result.llamadasContestadas += day.llamadasContestadas || 0;
+      result.llamadasPerdidas    += day.llamadasPerdidas    || 0;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return found ? result : null;
+}
 
 // ── Campos del formulario ─────────────────────────────────────────────────────
 const FORM_FIELDS = [
@@ -211,7 +237,8 @@ function AdvisorCard({ advisor, idx }) {
 
 // ── Vista principal ───────────────────────────────────────────────────────────
 export default function AdvisorWeeklyView({ week }) {
-  const { data, loading, error } = useData();
+  const { data, deepStats, loading, error } = useData();
+  const usingDeep = !!deepStats?.dailyStats;
 
   const advisors = useMemo(() => {
     if (!data) return [];
@@ -264,8 +291,13 @@ export default function AdvisorWeeklyView({ week }) {
 
     return Array.from(namesSet)
       .map(name => {
-        const act = activityMap[name] || { mensajesEnviados: 0, mensajesPendientes: 0, llamadas: 0, llamadasSalientes: 0 };
-        return { name, contacts: contactsMap[name] || [], ...act };
+        // Prioridad: datos históricos del job nocturno (precisos) > datos en tiempo real (aproximados)
+        const deep = sumDeepStats(deepStats, name, week.from, week.to);
+        const live = activityMap[name] || { mensajesEnviados: 0, mensajesPendientes: 0, llamadas: 0, llamadasSalientes: 0 };
+        const act  = deep
+          ? { ...live, mensajesEnviados: deep.mensajesEnviados, llamadas: deep.llamadas, llamadasSalientes: deep.llamadasSalientes, llamadasContestadas: deep.llamadasContestadas }
+          : live;
+        return { name, contacts: contactsMap[name] || [], ...act, hasDeepData: !!deep };
       })
       .sort((a, b) => {
         const sa = a.mensajesEnviados + a.llamadas;
@@ -324,6 +356,18 @@ export default function AdvisorWeeklyView({ week }) {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Indicador de fuente de datos */}
+      <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+        usingDeep
+          ? "border-success-400/20 bg-success-400/5 text-success-400"
+          : "border-gold-500/20 bg-gold-500/5 text-gold-400"
+      }`}>
+        {usingDeep
+          ? <><Database size={13} /> <span><strong>Datos históricos activos</strong> — estadísticas exactas del job nocturno ({deepStats?.updatedAt ? new Date(deepStats.updatedAt).toLocaleDateString("es-MX") : ""})</span></>
+          : <><Zap size={13} /> <span><strong>Datos en tiempo real</strong> — aproximación basada en el último mensaje de cada conversación. Para datos exactos, configura el job nocturno de GitHub Actions.</span></>
+        }
       </div>
 
       {/* Tarjetas */}

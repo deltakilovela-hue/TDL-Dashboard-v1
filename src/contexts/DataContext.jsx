@@ -198,6 +198,7 @@ function mergeContacts(ghlContacts, csvContacts) {
 // ── Provider ──────────────────────────────────────────────────────────────────
 export function DataProvider({ children }) {
   const [data,        setData]        = useState(null);
+  const [deepStats,   setDeepStats]   = useState(null); // stats históricas del job nocturno
   const [csvContacts, setCsvContacts] = useState([]);
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState(null);
@@ -206,6 +207,14 @@ export function DataProvider({ children }) {
   useEffect(() => {
     const saved = loadFromLS(LS_CSV);
     if (saved) setCsvContacts(saved);
+  }, []);
+
+  // Carga stats históricas (GitHub Actions job nocturno)
+  useEffect(() => {
+    fetch("/api/deep-stats")
+      .then(r => r.json())
+      .then(json => { if (json.ok && json.dailyStats) setDeepStats(json); })
+      .catch(() => {});
   }, []);
 
   const fetchData = useCallback(async (force = false) => {
@@ -227,6 +236,13 @@ export function DataProvider({ children }) {
       setData(json);
       setLastSync(json.updatedAt ? new Date(json.updatedAt) : new Date());
       saveToLS(LS_KEY, json);
+      // Refrescar también las stats profundas después de un sync forzado
+      if (force) {
+        fetch("/api/deep-stats")
+          .then(r => r.json())
+          .then(json => { if (json.ok && json.dailyStats) setDeepStats(json); })
+          .catch(() => {});
+      }
     } catch (e) {
       console.error("DataContext fetch:", e);
       setError(e.message);
@@ -265,6 +281,7 @@ export function DataProvider({ children }) {
   return (
     <DataContext.Provider value={{
       data: mergedData,
+      deepStats,              // { dailyStats: { "Asesor": { "2026-04-14": { mensajesEnviados, llamadas, ... } } } }
       csvCount: csvContacts.length,
       loading, error, lastSync,
       refresh:   () => fetchData(true),

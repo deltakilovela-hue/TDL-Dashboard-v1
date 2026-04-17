@@ -1,0 +1,41 @@
+name: Sync GHL Deep Stats
+
+on:
+  # Corre automáticamente cada noche a las 2am hora México (UTC-6 → 8am UTC)
+  schedule:
+    - cron: '0 8 * * *'
+
+  # También se puede lanzar manualmente desde GitHub Actions
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Razón del sync manual (opcional)'
+        required: false
+        default: 'Manual trigger'
+
+jobs:
+  sync:
+    name: Descargar mensajes GHL y guardar stats en Redis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Ejecutar sync-deep
+        env:
+          GHL_API_KEY:               ${{ secrets.GHL_API_KEY }}
+          GHL_LOCATION_ID:           ${{ secrets.GHL_LOCATION_ID }}
+          UPSTASH_REDIS_REST_URL:    ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN:  ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        run: node scripts/sync-deep.mjs
+
+      - name: Resultado
+        if: always()
+        run: echo "Sync finalizado con estado ${{ job.status }}"
