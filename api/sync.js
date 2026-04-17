@@ -200,27 +200,9 @@ function normalizeContact(c, userMap, oppMap, cfMap) {
     requiereCloser:  get("_requiere_intervencion_de_un_closer_u_otro_equipo"),
     fechaSeguimiento:get("_fecha_tentativa_de_seguimientocierre"),
     // ── Notas de actividad del asesor ──────────────────────────────────────────
-    notaPrimerContacto: get(
-      "Comentario de NOTA primer contacto",
-      "comentario_de_nota_primer_contacto",
-      "comentario_nota_primer_contacto",
-      "nota_primer_contacto",
-    ),
-    notaSeguimiento: get(
-      "Comentario de seguimiento externo",
-      "comentario_de_seguimiento_externo",
-      "comentario_seguimiento_externo",
-      "seguimiento_externo",
-    ),
-    notaCierre: get(
-      "Comentario NOTA Cierre comercial",
-      "Comentario NOTA cierre comercial",
-      "Comentario NOTA de cierre",
-      "comentario_nota_cierre_comercial",
-      "comentario_nota_de_cierre",
-      "comentario_nota_cierre",
-      "nota_cierre",
-    ),
+    notaPrimerContacto: get("comentario_de_nota_seguimiento_frio_"),  // "Comentario de NOTA primer contacto"
+    notaSeguimiento:    get("comentario_de_seguimiento_externo"),      // "Comentario de seguimiento externo"
+    notaCierre:         get("comentario_nota_cita_por_confirmar"),     // "Comentario NOTA Cierre comercial"
   };
 }
 
