@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
+import ContactModal from "../components/ContactModal.jsx";
 
 // ── Suma stats de deep (históricas) para un asesor en el rango de fechas ──────
 function sumDeepStats(deepStats, advisorName, from, to) {
@@ -126,7 +127,7 @@ function FormBar({ contacts }) {
 }
 
 // ── Lista expandible de contactos ─────────────────────────────────────────────
-function ContactList({ contacts }) {
+function ContactList({ contacts, onSelectContact }) {
   if (contacts.length === 0) return null;
 
   return (
@@ -138,7 +139,11 @@ function ContactList({ contacts }) {
         const nombre   = `${c.firstName} ${c.lastName}`.trim() || "(Sin nombre)";
 
         return (
-          <div key={c.id} className="flex items-center gap-3 px-3 py-2.5">
+          <button
+            key={c.id}
+            onClick={() => onSelectContact(c)}
+            className="flex items-center gap-3 px-3 py-2.5 w-full text-left transition-colors hover:bg-dark-700/40 active:bg-dark-700/60"
+          >
             {/* Nombre + teléfono */}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-cream truncate">{nombre}</p>
@@ -159,7 +164,10 @@ function ContactList({ contacts }) {
                 <div className={`h-1 rounded-full ${barColor}`} style={{ width: `${score.pct}%` }} />
               </div>
             </div>
-          </div>
+
+            {/* Indicador de clickeable */}
+            <span className="text-zinc-600 text-[10px] shrink-0">›</span>
+          </button>
         );
       })}
     </div>
@@ -167,7 +175,7 @@ function ContactList({ contacts }) {
 }
 
 // ── Tarjeta de asesor ─────────────────────────────────────────────────────────
-function AdvisorCard({ advisor, idx }) {
+function AdvisorCard({ advisor, idx, onSelectContact }) {
   const [expanded, setExpanded] = useState(false);
   const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
   const activo = advisor.mensajesEnviados > 0 || advisor.llamadas > 0;
@@ -226,7 +234,7 @@ function AdvisorCard({ advisor, idx }) {
 
           {expanded && (
             <div className="px-4 pb-4">
-              <ContactList contacts={advisor.contacts} />
+              <ContactList contacts={advisor.contacts} onSelectContact={onSelectContact} />
             </div>
           )}
         </>
@@ -239,6 +247,7 @@ function AdvisorCard({ advisor, idx }) {
 export default function AdvisorWeeklyView({ week }) {
   const { data, deepStats, loading, error } = useData();
   const usingDeep = !!deepStats?.dailyStats;
+  const [selectedContact, setSelectedContact] = useState(null);
 
   const advisors = useMemo(() => {
     if (!data) return [];
@@ -334,6 +343,13 @@ export default function AdvisorWeeklyView({ week }) {
 
   return (
     <div className="space-y-6">
+      {/* Modal de contacto */}
+      {selectedContact && (
+        <ContactModal
+          contact={selectedContact}
+          onClose={() => setSelectedContact(null)}
+        />
+      )}
 
       {/* Resumen */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -378,7 +394,12 @@ export default function AdvisorWeeklyView({ week }) {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {advisors.map((advisor, i) => (
-            <AdvisorCard key={advisor.name} advisor={advisor} idx={i} />
+            <AdvisorCard
+              key={advisor.name}
+              advisor={advisor}
+              idx={i}
+              onSelectContact={setSelectedContact}
+            />
           ))}
         </div>
       )}
