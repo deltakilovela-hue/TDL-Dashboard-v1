@@ -17,7 +17,7 @@ function relativeTime(date) {
   return `hace ${Math.floor(diff / 86400)} d`;
 }
 
-export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent }) {
+export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent, onAudit }) {
   const { data, loading, error, lastSync, refresh } = useData();
 
   return (
@@ -81,6 +81,16 @@ export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent 
                   </span></>
               ) : null}
             </div>
+
+            {onAudit && (
+              <button
+                onClick={onAudit}
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ring-1 ring-zinc-600 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 transition-all"
+                title="Ver datos crudos de GHL"
+              >
+                🔍 <span className="hidden sm:inline">Auditoría</span>
+              </button>
+            )}
 
             <button
               onClick={refresh}
