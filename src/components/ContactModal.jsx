@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { X, MessageSquare, Phone, FileText, PhoneCall, PhoneMissed, ChevronDown, ChevronUp, Pencil, Save, XCircle, CheckCircle } from "lucide-react";
+import { X, MessageSquare, Phone, FileText, PhoneCall, PhoneMissed, ChevronDown, ChevronUp, Pencil, Save, XCircle, CheckCircle, Plus, Send } from "lucide-react";
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
 function stripHtml(str) {
@@ -245,7 +245,12 @@ export default function ContactModal({ contact, onClose }) {
   const [error,   setError]   = useState(null);
   const [tab,     setTab]     = useState("mensajes");
   const [showAll, setShowAll] = useState(false);
-  const [saving,  setSaving]  = useState(false);
+  const [saving,      setSaving]      = useState(false);
+  // Quick note state
+  const [noteText,    setNoteText]    = useState("");
+  const [savingNote,  setSavingNote]  = useState(false);
+  const [noteError,   setNoteError]   = useState(null);
+  const [noteSuccess, setNoteSuccess] = useState(false);
   // Local copy of contact to reflect edits immediately
   const [localContact, setLocalContact] = useState(contact);
 
@@ -300,6 +305,29 @@ export default function ContactModal({ contact, onClose }) {
       setSaving(false);
     }
   }, [contact?.id]);
+
+  const handleAddNote = useCallback(async () => {
+    if (!noteText.trim()) return;
+    setSavingNote(true); setNoteError(null); setNoteSuccess(false);
+    try {
+      const r = await fetch("/api/note-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId: contact.id, body: noteText.trim() }),
+      });
+      const json = await r.json();
+      if (!json.ok) { setNoteError(json.error); return; }
+      setNoteText("");
+      setNoteSuccess(true);
+      setTimeout(() => setNoteSuccess(false), 3000);
+      // Recargar notas
+      load();
+    } catch (e) {
+      setNoteError(e.message);
+    } finally {
+      setSavingNote(false);
+    }
+  }, [contact?.id, noteText, load]);
 
   if (!contact) return null;
 
@@ -435,25 +463,64 @@ export default function ContactModal({ contact, onClose }) {
           {/* ── TAB: Notas ── */}
           {!loading && !error && tab === "notas" && (
             <div className="flex flex-col gap-3 p-4">
+
+              {/* ── Agregar nota rápida ── */}
+              <div className="rounded-xl border border-zinc-700 bg-zinc-800/30 overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700/60 bg-zinc-800/50">
+                  <Plus size={13} className="text-gold-400" />
+                  <span className="text-xs font-semibold text-zinc-200">Nueva nota</span>
+                </div>
+                <div className="p-3 flex flex-col gap-2">
+                  <textarea
+                    value={noteText}
+                    onChange={e => setNoteText(e.target.value)}
+                    rows={3}
+                    placeholder="Escribe una nota para este contacto…"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-gold-500/50 resize-none"
+                  />
+                  {noteError && (
+                    <p className="text-xs text-red-400 flex items-center gap-1">❌ {noteError}</p>
+                  )}
+                  {noteSuccess && (
+                    <p className="text-xs text-green-400 flex items-center gap-1"><CheckCircle size={11} /> Nota guardada correctamente</p>
+                  )}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleAddNote}
+                      disabled={savingNote || !noteText.trim()}
+                      className="flex items-center gap-1.5 text-xs font-medium text-gold-400 hover:text-gold-300 border border-gold-500/40 hover:border-gold-500/70 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Send size={11} />
+                      {savingNote ? "Guardando…" : "Guardar nota"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contador */}
               {contact.sumaNotas && contact.sumaNotas !== "(No hay datos)" && (
                 <div className="flex items-center gap-2 rounded-lg bg-gold-500/10 border border-gold-500/20 px-3 py-2">
                   <FileText size={13} className="text-gold-400 shrink-0" />
                   <span className="text-xs text-gold-300">
-                    <strong className="text-gold-400">{contact.sumaNotas}</strong> notas registradas en total
+                    <strong className="text-gold-400">{contact.sumaNotas}</strong> notas registradas en total (campo GHL)
                   </span>
                 </div>
               )}
+
+              {/* Historial de notas */}
               {contact.historialNotas && contact.historialNotas !== "(No hay datos)" && (
                 <div className="rounded-xl border border-zinc-700 bg-zinc-800/40 p-3">
                   <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mb-2">📋 Historial de notas</p>
                   <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">{stripHtml(contact.historialNotas)}</p>
                 </div>
               )}
+
+              {/* Notas GHL individuales */}
               {notes.length === 0 && (!contact.historialNotas || contact.historialNotas === "(No hay datos)") ? (
-                <p className="text-center text-sm text-zinc-500 py-8">Sin notas registradas</p>
+                <p className="text-center text-sm text-zinc-500 py-4">Sin notas registradas aún</p>
               ) : notes.length > 0 && (
                 <>
-                  <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider px-1">Notas GHL</p>
+                  <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider px-1">Notas GHL ({notes.length})</p>
                   {notes.map((n, i) => (
                     <div key={n.id || i} className="rounded-xl border border-zinc-800 bg-zinc-800/40 p-3">
                       <p className="text-xs text-zinc-500 mb-1.5">{formatDate(n.dateAdded)}</p>

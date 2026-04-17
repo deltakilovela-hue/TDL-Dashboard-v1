@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp, FileText } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp, FileText, Calendar, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import ContactModal from "../components/ContactModal.jsx";
 
@@ -302,6 +302,97 @@ const AVATAR_COLORS = [
   "bg-cream/10 text-cream ring-cream/20",
 ];
 
+// ── Estados de cita ───────────────────────────────────────────────────────────
+const APPT_STATUS_MAP = {
+  confirmed: { label: "Confirmada",    color: "bg-info-400/15 text-info-300 border-info-400/30",       icon: Clock },
+  new:       { label: "Nueva",         color: "bg-info-400/15 text-info-300 border-info-400/30",       icon: Clock },
+  showed:    { label: "Se presentó",   color: "bg-success-400/15 text-success-300 border-success-400/30", icon: CheckCircle },
+  "no-show": { label: "No show",       color: "bg-danger-400/15 text-danger-300 border-danger-400/30", icon: XCircle },
+  noshow:    { label: "No show",       color: "bg-danger-400/15 text-danger-300 border-danger-400/30", icon: XCircle },
+  cancelled: { label: "Cancelada",     color: "bg-dark-700 text-cream-dim border-dark-600",             icon: XCircle },
+  default:   { label: "Programada",   color: "bg-dark-700 text-cream-dim border-dark-600",             icon: AlertCircle },
+};
+
+function ApptBadge({ status }) {
+  const s = APPT_STATUS_MAP[status] || APPT_STATUS_MAP.default;
+  const Icon = s.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium rounded-full border px-1.5 py-0.5 ${s.color}`}>
+      <Icon size={9} />
+      {s.label}
+    </span>
+  );
+}
+
+function formatTime(str) {
+  if (!str) return "—";
+  const d = new Date(str);
+  if (isNaN(d)) return "—";
+  return d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+}
+
+// ── Lista de citas del asesor ─────────────────────────────────────────────────
+function AppointmentsList({ appointments }) {
+  const [collapsed, setCollapsed] = useState(true);
+
+  if (!appointments || appointments.length === 0) return null;
+
+  const showed    = appointments.filter(a => a.status === "showed").length;
+  const noShow    = appointments.filter(a => a.status === "no-show" || a.status === "noshow").length;
+  const cancelled = appointments.filter(a => a.status === "cancelled").length;
+  const pending   = appointments.filter(a => a.status === "confirmed" || a.status === "new").length;
+
+  const visible = collapsed ? appointments.slice(0, 3) : appointments;
+
+  return (
+    <div className="rounded-xl border border-dark-700 bg-dark-800/30 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-dark-700/60">
+        <Calendar size={12} className="text-gold-400 shrink-0" />
+        <span className="text-[11px] font-semibold text-cream-dim uppercase tracking-wide flex-1">
+          Citas de la semana
+        </span>
+        <div className="flex items-center gap-1.5 text-[10px]">
+          {showed    > 0 && <span className="text-success-400">{showed}✓</span>}
+          {noShow    > 0 && <span className="text-danger-400">{noShow}✗</span>}
+          {cancelled > 0 && <span className="text-cream-dim">{cancelled} cancel.</span>}
+          {pending   > 0 && <span className="text-info-300">{pending} conf.</span>}
+        </div>
+      </div>
+
+      {/* Lista */}
+      <div className="divide-y divide-dark-700/40">
+        {visible.map((a, i) => (
+          <div key={a.id || i} className="flex items-center gap-2 px-3 py-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-cream truncate">
+                {a.contactName || a.title || "(Sin nombre)"}
+              </p>
+              {a.calendarName && (
+                <p className="text-[10px] text-cream-dim truncate">{a.calendarName}</p>
+              )}
+            </div>
+            <span className="text-[10px] text-cream-dim tabular-nums shrink-0">{formatTime(a.startTime)}</span>
+            <ApptBadge status={a.status} />
+          </div>
+        ))}
+      </div>
+
+      {/* Ver más */}
+      {appointments.length > 3 && (
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          className="flex w-full items-center justify-center gap-1 py-1.5 text-[11px] text-cream-dim hover:text-cream border-t border-dark-700/60 transition-colors"
+        >
+          {collapsed
+            ? <><ChevronDown size={11} /> Ver {appointments.length - 3} más</>
+            : <><ChevronUp size={11} /> Mostrar menos</>}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Stat box ──────────────────────────────────────────────────────────────────
 function Stat({ icon: Icon, label, value, color = "muted" }) {
   const valueClass =
@@ -399,10 +490,14 @@ function ContactList({ contacts, onSelectContact }) {
 }
 
 // ── Tarjeta de asesor ─────────────────────────────────────────────────────────
-function AdvisorCard({ advisor, idx, onSelectContact }) {
+function AdvisorCard({ advisor, idx, onSelectContact, appointments = [] }) {
   const [expanded, setExpanded] = useState(false);
   const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
   const activo = advisor.mensajesEnviados > 0 || advisor.llamadas > 0;
+
+  const citasCount   = appointments.length;
+  const citasShowed  = appointments.filter(a => a.status === "showed").length;
+  const citasNoShow  = appointments.filter(a => ["no-show","noshow"].includes(a.status)).length;
 
   return (
     <div className="rounded-2xl border border-dark-700 bg-dark-900 overflow-hidden">
@@ -430,14 +525,27 @@ function AdvisorCard({ advisor, idx, onSelectContact }) {
         {/* Stats */}
         <div>
           <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-cream-dim">Actividad de la semana</p>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5 flex-wrap">
             <Stat icon={MessageSquare} label="Msj. enviados"  value={advisor.mensajesEnviados}   color={advisor.mensajesEnviados > 0   ? "gold"   : "muted"} />
             <Stat icon={Inbox}         label="Sin leer"        value={advisor.mensajesPendientes}  color={advisor.mensajesPendientes > 0 ? "danger" : "muted"} />
             <Stat icon={Phone}         label="Llamadas"         value={advisor.llamadas}            color={advisor.llamadas > 0           ? "gold"   : "muted"} />
             <Stat icon={PhoneCall}     label="Salientes"        value={advisor.llamadasSalientes}   color={advisor.llamadasSalientes > 0  ? "green"  : "muted"} />
             <Stat icon={FileText}      label="Notas reg."       value={advisor.sumaNotas     || 0}  color={advisor.sumaNotas     > 0      ? "gold"   : "muted"} />
+            <Stat icon={Calendar}      label="Citas"            value={citasCount}                  color={citasCount > 0                 ? "gold"   : "muted"} />
           </div>
+          {/* Mini resumen de citas si hay */}
+          {citasCount > 0 && (
+            <div className="flex items-center gap-3 mt-1.5 text-[11px] text-cream-dim">
+              {citasShowed > 0  && <span className="text-success-400">{citasShowed} se presentaron</span>}
+              {citasNoShow > 0  && <span className="text-danger-400">{citasNoShow} no show</span>}
+            </div>
+          )}
         </div>
+
+        {/* Citas de la semana */}
+        {appointments.length > 0 && (
+          <AppointmentsList appointments={appointments} />
+        )}
 
         {/* Formulario */}
         <div>
@@ -473,7 +581,30 @@ export default function AdvisorWeeklyView({ week }) {
   const { data, deepStats, loading, error } = useData();
   const usingDeep = !!deepStats?.dailyStats;
   const [selectedContact, setSelectedContact] = useState(null);
-  const [filterAdvisor,   setFilterAdvisor]   = useState(null); // nombre del asesor filtrado
+  const [filterAdvisor,   setFilterAdvisor]   = useState(null);
+
+  // ── Citas de la semana ────────────────────────────────────────────────────
+  const [apptData,    setApptData]    = useState(null);
+  const [apptLoading, setApptLoading] = useState(false);
+
+  useEffect(() => {
+    if (!week?.from || !week?.to) return;
+    setApptLoading(true);
+    const from = week.from.toISOString();
+    const to   = week.to.toISOString();
+    fetch(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .then(r => r.json())
+      .then(d => { if (d.ok) setApptData(d); })
+      .catch(() => {})
+      .finally(() => setApptLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [week?.from?.toISOString(), week?.to?.toISOString()]);
+
+  // Map: advisor name → array of appointments
+  const apptsByAdvisor = useMemo(() => {
+    if (!apptData?.byAdvisor) return {};
+    return apptData.byAdvisor;
+  }, [apptData]);
 
   const advisors = useMemo(() => {
     if (!data) return [];
@@ -550,14 +681,20 @@ export default function AdvisorWeeklyView({ week }) {
       });
   }, [data, week]);
 
-  const totals = useMemo(() => ({
-    activos:    advisors.filter(a => a.mensajesEnviados + a.llamadas > 0).length,
-    mensajes:   advisors.reduce((s, a) => s + a.mensajesEnviados,   0),
-    pendientes: advisors.reduce((s, a) => s + a.mensajesPendientes, 0),
-    llamadas:   advisors.reduce((s, a) => s + a.llamadas,           0),
-    notas:      advisors.reduce((s, a) => s + (a.notasLlenadas||0), 0),
-    sumaNotas:  advisors.reduce((s, a) => s + (a.sumaNotas||0),    0),
-  }), [advisors]);
+  const totals = useMemo(() => {
+    const allAppts  = Object.values(apptsByAdvisor).flat();
+    return {
+      activos:    advisors.filter(a => a.mensajesEnviados + a.llamadas > 0).length,
+      mensajes:   advisors.reduce((s, a) => s + a.mensajesEnviados,   0),
+      pendientes: advisors.reduce((s, a) => s + a.mensajesPendientes, 0),
+      llamadas:   advisors.reduce((s, a) => s + a.llamadas,           0),
+      notas:      advisors.reduce((s, a) => s + (a.notasLlenadas||0), 0),
+      sumaNotas:  advisors.reduce((s, a) => s + (a.sumaNotas||0),     0),
+      citas:      allAppts.length,
+      citasShowed:   allAppts.filter(a => a.status === "showed").length,
+      citasNoShow:   allAppts.filter(a => ["no-show","noshow"].includes(a.status)).length,
+    };
+  }, [advisors, apptsByAdvisor]);
 
   if (loading && !data) {
     return (
@@ -588,24 +725,26 @@ export default function AdvisorWeeklyView({ week }) {
       )}
 
       {/* Resumen */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
         {[
-          { icon: Users,         label: "Asesores activos",  value: totals.activos,    sub: `de ${advisors.length} en total` },
-          { icon: MessageSquare, label: "Mensajes enviados", value: totals.mensajes,   sub: "esta semana" },
-          { icon: Inbox,         label: "Sin leer",          value: totals.pendientes, sub: "pendientes",  warn: totals.pendientes > 0 },
-          { icon: Phone,         label: "Llamadas",          value: totals.llamadas,   sub: "esta semana" },
-          { icon: FileText,      label: "Notas llenadas",    value: totals.notas,      sub: "campos activos" },
-          { icon: FileText,      label: "Total notas reg.",   value: totals.sumaNotas,  sub: "suma del campo GHL" },
-        ].map(({ icon: Icon, label, value, sub, warn }) => (
+          { icon: Users,         label: "Asesores activos",  value: totals.activos,       sub: `de ${advisors.length}` },
+          { icon: MessageSquare, label: "Mensajes enviados", value: totals.mensajes,      sub: "esta semana" },
+          { icon: Inbox,         label: "Sin leer",          value: totals.pendientes,    sub: "pendientes",  warn: totals.pendientes > 0 },
+          { icon: Phone,         label: "Llamadas",          value: totals.llamadas,      sub: "esta semana" },
+          { icon: FileText,      label: "Notas campos",      value: totals.notas,         sub: "campos activos" },
+          { icon: FileText,      label: "Total notas GHL",   value: totals.sumaNotas,     sub: "suma del campo" },
+          { icon: Calendar,      label: "Citas semana",      value: totals.citas,         sub: apptLoading ? "cargando…" : `${totals.citasShowed} asistieron`, gold: totals.citas > 0 },
+          { icon: CheckCircle,   label: "No show",           value: totals.citasNoShow,   sub: "de la semana", warn: totals.citasNoShow > 0 },
+        ].map(({ icon: Icon, label, value, sub, warn, gold }) => (
           <div key={label} className="rounded-xl border border-dark-700 bg-dark-900 p-4">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs text-cream-dim">{label}</p>
-                <p className={`mt-1 text-3xl font-bold tabular-nums ${warn ? "text-danger-400" : "text-cream"}`}>{value}</p>
+                <p className={`mt-1 text-3xl font-bold tabular-nums ${warn ? "text-danger-400" : gold ? "text-gold-400" : "text-cream"}`}>{value}</p>
                 <p className="mt-0.5 text-xs text-cream-dim">{sub}</p>
               </div>
-              <div className={`rounded-lg p-2 ${warn ? "bg-danger-400/10" : "bg-dark-800"}`}>
-                <Icon size={16} className={warn ? "text-danger-400" : "text-cream-muted"} />
+              <div className={`rounded-lg p-2 ${warn ? "bg-danger-400/10" : gold ? "bg-gold-500/10" : "bg-dark-800"}`}>
+                <Icon size={16} className={warn ? "text-danger-400" : gold ? "text-gold-400" : "text-cream-muted"} />
               </div>
             </div>
           </div>
@@ -690,6 +829,7 @@ export default function AdvisorWeeklyView({ week }) {
               advisor={advisor}
               idx={advisors.indexOf(advisor)}
               onSelectContact={setSelectedContact}
+              appointments={apptsByAdvisor[advisor.name] || []}
             />
           ))}
         </div>
