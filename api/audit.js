@@ -109,8 +109,9 @@ export default async function handler(req, res) {
       return null;
     })();
 
-    // Estadísticas de custom fields
-    const customFieldsFlat = (rawCF.customFields || []).map(f => ({
+    // Estadísticas de custom fields — GHL puede devolver la lista en distintas claves
+    const cfArray = rawCF.customFields || rawCF.fields || rawCF.data || rawCF.customfield || [];
+    const customFieldsFlat = (Array.isArray(cfArray) ? cfArray : []).map(f => ({
       id:       f.id,
       name:     f.name,
       fieldKey: f.fieldKey,
@@ -167,9 +168,12 @@ export default async function handler(req, res) {
 
       // ── 3. CAMPOS PERSONALIZADOS ─────────────────────────────────────────────
       customFields: {
-        total:   customFieldsFlat.length,
-        fields:  customFieldsFlat,
-        firstRaw: (rawCF.customFields || [])[0] || null,
+        total:    customFieldsFlat.length,
+        fields:   customFieldsFlat,
+        firstRaw: customFieldsFlat[0] || null,
+        // Raw completo para diagnóstico — muestra todas las claves que devolvió GHL
+        _rawKeys:  Object.keys(rawCF),
+        _rawFull:  rawCF,
       },
 
       // ── 4. CONTACTOS ─────────────────────────────────────────────────────────

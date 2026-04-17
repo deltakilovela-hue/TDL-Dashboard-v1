@@ -186,6 +186,19 @@ function SectionCustomFields({ data }) {
   return (
     <div className="space-y-4">
       <Pill label="Total campos personalizados" value={data?.total} color="purple" />
+
+      {data?.total === 0 && (
+        <Card title="🔍 Diagnóstico — respuesta cruda del endpoint">
+          <p className="text-zinc-400 text-sm mb-2">
+            El endpoint <code className="text-yellow-400">/locations/&#123;id&#125;/customFields</code> devolvió 0 campos.
+            Claves en la respuesta: <strong className="text-zinc-200">{(data?._rawKeys || []).join(", ") || "ninguna"}</strong>
+          </p>
+          <div className="text-sm font-mono mt-2">
+            <JsonValue val={data?._rawFull} depth={1} />
+          </div>
+        </Card>
+      )}
+
       <Card title={`Todos los custom fields (${data?.total})`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
