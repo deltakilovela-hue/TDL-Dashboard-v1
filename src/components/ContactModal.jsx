@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { X, MessageSquare, Phone, FileText, PhoneCall, PhoneMissed, ChevronDown, ChevronUp, Pencil, Save, XCircle, CheckCircle, Plus, Send } from "lucide-react";
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
@@ -318,6 +318,36 @@ export default function ContactModal({ contact, onClose }) {
     }
   }, [contact?.id]);
 
+  // ── Sobreescribir valores del cache con datos frescos de GHL ─────────────────
+  // rawCustomFields viene de contact-detail (tiempo real), el cache puede estar desactualizado
+  const liveContact = useMemo(() => {
+    const allFields = [...ENCUESTA_PC, ...ENCUESTA_CIERRE];
+    // Si no hay rawCustomFields, usar localContact tal cual
+    if (!detail?.rawCustomFields?.length) return localContact;
+
+    // Construir mapa id → valor desde GHL fresco
+    const idMap = {};
+    detail.rawCustomFields.forEach(f => {
+      if (f.id && f.value !== null && f.value !== undefined && f.value !== "") {
+        idMap[f.id] = String(f.value);
+      }
+    });
+
+    // Aplicar overrides al contacto local
+    const overrides = {};
+    allFields.forEach(f => {
+      if (idMap[f.id] !== undefined) overrides[f.key] = idMap[f.id];
+    });
+
+    // También actualizar sumaNotas e historialNotas si vienen en rawCustomFields
+    const sumaId   = "yxFLpVaQpgBtldW2fpet";
+    const histId   = "JchVLh13uAo6SdV6hYRg";
+    if (idMap[sumaId]) overrides.sumaNotas     = idMap[sumaId];
+    if (idMap[histId]) overrides.historialNotas = idMap[histId];
+
+    return { ...localContact, ...overrides };
+  }, [localContact, detail]);
+
   const handleAddNote = useCallback(async () => {
     if (!noteText.trim()) return;
     setSavingNote(true); setNoteError(null); setNoteSuccess(false);
@@ -349,9 +379,10 @@ export default function ContactModal({ contact, onClose }) {
   const s      = detail?.stats    || {};
   const visibleMsgs = showAll ? msgs : msgs.slice(0, 20);
 
-  // Calcular completitud de ambas encuestas
-  const pcFilled     = ENCUESTA_PC.filter(f => hasValue(localContact[f.key])).length;
-  const cierreFilled = ENCUESTA_CIERRE.filter(f => hasValue(localContact[f.key])).length;
+  // Calcular completitud usando liveContact (datos frescos de GHL)
+  const pcFilled     = ENCUESTA_PC.filter(f => f.type !== "file" && hasValue(liveContact[f.key])).length;
+  const cierreFilled = ENCUESTA_CIERRE.filter(f => hasValue(liveContact[f.key])).length;
+  const pcTotal      = ENCUESTA_PC.filter(f => f.type !== "file").length; // excluir file del conteo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
@@ -390,8 +421,8 @@ export default function ContactModal({ contact, onClose }) {
             {/* Completitud encuestas */}
             <div className="flex flex-col items-center gap-1 rounded-xl px-3 py-2 shrink-0 bg-zinc-800 text-zinc-300">
               <span className="text-[10px] opacity-70">Enc. PC</span>
-              <span className={`text-lg font-bold ${pcFilled === ENCUESTA_PC.length ? "text-green-400" : pcFilled > 0 ? "text-gold-400" : "text-zinc-500"}`}>
-                {pcFilled}/{ENCUESTA_PC.length}
+              <span className={`text-lg font-bold ${pcFilled === pcTotal ? "text-green-400" : pcFilled > 0 ? "text-gold-400" : "text-zinc-500"}`}>
+                {pcFilled}/{pcTotal}
               </span>
             </div>
             <div className="flex flex-col items-center gap-1 rounded-xl px-3 py-2 shrink-0 bg-zinc-800 text-zinc-300">
@@ -411,7 +442,7 @@ export default function ContactModal({ contact, onClose }) {
           <TabBtn active={tab === "encuestas"} onClick={() => setTab("encuestas")}>
             📋 Encuestas
             {!loading && (pcFilled + cierreFilled > 0) && (
-              <span className="ml-1 opacity-60">({pcFilled + cierreFilled}/{ENCUESTA_PC.length + ENCUESTA_CIERRE.length})</span>
+              <span className="ml-1 opacity-60">({pcFilled + cierreFilled}/{pcTotal + ENCUESTA_CIERRE.length})</span>
             )}
           </TabBtn>
           <TabBtn active={tab === "notas"} onClick={() => setTab("notas")}>
@@ -457,7 +488,7 @@ export default function ContactModal({ contact, onClose }) {
                 title="Encuesta de Primer Contacto"
                 emoji="📋"
                 fields={ENCUESTA_PC}
-                contact={localContact}
+                contact={liveContact}
                 onSave={handleSave}
                 saving={saving}
               />
@@ -465,7 +496,7 @@ export default function ContactModal({ contact, onClose }) {
                 title="Encuesta de Cierre Comercial"
                 emoji="🏁"
                 fields={ENCUESTA_CIERRE}
-                contact={localContact}
+                contact={liveContact}
                 onSave={handleSave}
                 saving={saving}
               />
@@ -510,20 +541,20 @@ export default function ContactModal({ contact, onClose }) {
               </div>
 
               {/* Contador */}
-              {contact.sumaNotas && contact.sumaNotas !== "(No hay datos)" && (
+              {hasValue(liveContact.sumaNotas) && (
                 <div className="flex items-center gap-2 rounded-lg bg-gold-500/10 border border-gold-500/20 px-3 py-2">
                   <FileText size={13} className="text-gold-400 shrink-0" />
                   <span className="text-xs text-gold-300">
-                    <strong className="text-gold-400">{contact.sumaNotas}</strong> notas registradas en total (campo GHL)
+                    <strong className="text-gold-400">{liveContact.sumaNotas}</strong> notas registradas en total (campo GHL)
                   </span>
                 </div>
               )}
 
               {/* Historial de notas */}
-              {contact.historialNotas && contact.historialNotas !== "(No hay datos)" && (
+              {hasValue(liveContact.historialNotas) && (
                 <div className="rounded-xl border border-zinc-700 bg-zinc-800/40 p-3">
                   <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mb-2">📋 Historial de notas</p>
-                  <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">{stripHtml(contact.historialNotas)}</p>
+                  <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">{stripHtml(liveContact.historialNotas)}</p>
                 </div>
               )}
 
