@@ -6,6 +6,7 @@ import ContactModal from "../components/ContactModal.jsx";
 // ── Configuración de roles ────────────────────────────────────────────────────
 // Usuarios que NO son asesores de ventas (ocultar del dashboard)
 const EXCLUDED_USERS = new Set([
+  "Alma Benitez",
   "Javier Vendedor",
   "Jonathan vendedor vendedor",
   "Robert Merca",
@@ -17,6 +18,23 @@ const ADMIN_USERS = new Set([
   "Fernanda Valdez",
   "Nanncy Meza",
 ]);
+
+// ── Helpers de presupuesto ────────────────────────────────────────────────────
+function parsePresupuesto(v) {
+  if (!v || v === "(No hay datos)") return 0;
+  const s = String(v).toLowerCase().replace(/[$,\s]/g, "");
+  const n = parseFloat(s);
+  if (isNaN(n)) return 0;
+  if (s.endsWith("m")) return n * 1_000_000;
+  if (s.endsWith("k")) return n * 1_000;
+  return n;
+}
+function formatCurrency(n) {
+  if (n <= 0) return null;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `$${(n / 1_000).toFixed(0)}k`;
+  return `$${n.toLocaleString("es-MX")}`;
+}
 
 // ── Suma stats de deep (históricas) para un asesor en el rango de fechas ──────
 function sumDeepStats(deepStats, advisorName, from, to) {
@@ -433,7 +451,7 @@ function AppointmentsList({ appointments }) {
 }
 
 // ── Stat box ──────────────────────────────────────────────────────────────────
-function Stat({ icon: Icon, label, value, color = "muted" }) {
+function Stat({ icon: Icon, label, value, color = "muted", onClick }) {
   const valueClass =
     color === "gold"   ? "text-gold-400"   :
     color === "danger" ? "text-danger-400" :
@@ -443,12 +461,19 @@ function Stat({ icon: Icon, label, value, color = "muted" }) {
     color === "danger" ? "text-danger-400/50" :
     color === "green"  ? "text-success-400/50": "text-cream-dim/30";
 
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="flex flex-1 flex-col items-center gap-1 rounded-lg bg-dark-800/60 px-2 py-3 min-w-[68px]">
+    <Tag
+      onClick={onClick}
+      className={[
+        "flex flex-1 flex-col items-center gap-1 rounded-lg bg-dark-800/60 px-2 py-3 min-w-[68px]",
+        onClick ? "cursor-pointer hover:bg-dark-700/80 active:scale-95 transition-all" : "",
+      ].join(" ")}
+    >
       <Icon size={14} className={iconClass} />
       <span className={`text-2xl font-bold tabular-nums leading-none ${valueClass}`}>{value}</span>
       <span className="text-[10px] text-cream-dim text-center leading-tight">{label}</span>
-    </div>
+    </Tag>
   );
 }
 
@@ -556,15 +581,102 @@ function ContactList({ contacts, onSelectContact }) {
   );
 }
 
+// ── Modal de notas del asesor ─────────────────────────────────────────────────
+const NOTE_KEYS = [
+  { key: "notaPrimerContacto", label: "Primer contacto" },
+  { key: "notaSeguimiento",    label: "Seguimiento"     },
+  { key: "notaCierre",         label: "Cierre"          },
+];
+
+function AdvisorNotesModal({ advisor, onClose }) {
+  useEffect(() => {
+    const h = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const contactsWithNotes = advisor.contacts.filter(c =>
+    NOTE_KEYS.some(n => hasValue(c[n.key])) || hasValue(c.historialNotas)
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-xl max-h-[85vh] flex flex-col rounded-2xl border border-dark-700 bg-dark-900 shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-dark-700 shrink-0">
+          <FileText size={15} className="text-gold-400" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-cream">Notas — {advisor.name}</p>
+            <p className="text-xs text-cream-dim">
+              {contactsWithNotes.length} contacto(s) con notas registradas · Total: {advisor.sumaNotas || 0} notas GHL
+            </p>
+          </div>
+          <button onClick={onClose} className="shrink-0 h-8 w-8 flex items-center justify-center rounded-full hover:bg-dark-800 text-cream-dim hover:text-cream transition-colors">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Lista */}
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+          {contactsWithNotes.length === 0 ? (
+            <p className="text-center text-sm text-cream-dim py-8">Sin notas registradas en campos de encuesta</p>
+          ) : (
+            contactsWithNotes.map(c => {
+              const nombre = `${c.firstName} ${c.lastName}`.trim() || "(Sin nombre)";
+              return (
+                <div key={c.id} className="rounded-xl border border-dark-700 bg-dark-800/40 overflow-hidden">
+                  {/* Contacto header */}
+                  <div className="flex items-center gap-2 px-3 py-2 bg-dark-800/60 border-b border-dark-700/60">
+                    <span className="text-xs font-semibold text-cream">{nombre}</span>
+                    {c.phone && c.phone !== "(No hay datos)" && (
+                      <span className="text-[10px] text-cream-dim font-mono">{c.phone}</span>
+                    )}
+                    {hasValue(c.sumaNotas) && (
+                      <span className="ml-auto text-[10px] text-gold-400">{c.sumaNotas} notas</span>
+                    )}
+                  </div>
+                  {/* Notas de encuesta */}
+                  <div className="divide-y divide-dark-700/40">
+                    {NOTE_KEYS.map(n => hasValue(c[n.key]) && (
+                      <div key={n.key} className="flex gap-3 px-3 py-2.5">
+                        <span className="text-[11px] text-cream-dim shrink-0 w-28">{n.label}</span>
+                        <p className="text-xs text-cream-muted leading-relaxed">{c[n.key]}</p>
+                      </div>
+                    ))}
+                    {hasValue(c.historialNotas) && (
+                      <div className="px-3 py-2.5">
+                        <p className="text-[11px] text-cream-dim mb-1">Historial GHL</p>
+                        <p className="text-xs text-cream-muted leading-relaxed whitespace-pre-wrap">{c.historialNotas}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Tarjeta de asesor ─────────────────────────────────────────────────────────
-function AdvisorCard({ advisor, idx, onSelectContact, appointments = [] }) {
+function AdvisorCard({ advisor, idx, onSelectContact, appointments = [], onShowNotes }) {
   const [expanded, setExpanded] = useState(false);
   const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
   const activo = advisor.mensajesEnviados > 0 || advisor.llamadas > 0;
 
-  const citasCount   = appointments.length;
-  const citasShowed  = appointments.filter(a => a.status === "showed").length;
-  const citasNoShow  = appointments.filter(a => ["no-show","noshow"].includes(a.status)).length;
+  const citasCount  = appointments.length;
+  const citasShowed = appointments.filter(a => a.status === "showed").length;
+  const citasNoShow = appointments.filter(a => ["no-show","noshow"].includes(a.status)).length;
+
+  // Sumatoria de presupuesto de contactos asignados
+  const presupuestoTotal  = advisor.contacts.reduce((s, c) => s + parsePresupuesto(c.presupuesto), 0);
+  const presupuestoStr    = formatCurrency(presupuestoTotal);
+  const presupuestoCount  = advisor.contacts.filter(c => hasValue(c.presupuesto)).length;
 
   return (
     <div className="rounded-2xl border border-dark-700 bg-dark-900 overflow-hidden">
@@ -607,20 +719,29 @@ function AdvisorCard({ advisor, idx, onSelectContact, appointments = [] }) {
         <div>
           <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-cream-dim">Actividad de la semana</p>
           <div className="flex gap-1.5 flex-wrap">
-            <Stat icon={MessageSquare} label="Msj. enviados"  value={advisor.mensajesEnviados}   color={advisor.mensajesEnviados > 0   ? "gold"   : "muted"} />
-            <Stat icon={Inbox}         label="Sin leer"        value={advisor.mensajesPendientes}  color={advisor.mensajesPendientes > 0 ? "danger" : "muted"} />
-            <Stat icon={Phone}         label="Llamadas"         value={advisor.llamadas}            color={advisor.llamadas > 0           ? "gold"   : "muted"} />
-            <Stat icon={PhoneCall}     label="Salientes"        value={advisor.llamadasSalientes}   color={advisor.llamadasSalientes > 0  ? "green"  : "muted"} />
-            <Stat icon={FileText}      label="Notas reg."       value={advisor.sumaNotas     || 0}  color={advisor.sumaNotas     > 0      ? "gold"   : "muted"} />
-            <Stat icon={Calendar}      label="Citas"            value={citasCount}                  color={citasCount > 0                 ? "gold"   : "muted"} />
+            <Stat icon={MessageSquare} label="Msj. enviados"  value={advisor.mensajesEnviados}  color={advisor.mensajesEnviados > 0   ? "gold"   : "muted"} />
+            <Stat icon={Inbox}         label="Sin leer"        value={advisor.mensajesPendientes} color={advisor.mensajesPendientes > 0 ? "danger" : "muted"} />
+            <Stat icon={Phone}         label="Llamadas"        value={advisor.llamadas}           color={advisor.llamadas > 0           ? "gold"   : "muted"} />
+            <Stat
+              icon={FileText}
+              label="Notas reg."
+              value={advisor.sumaNotas || 0}
+              color={advisor.sumaNotas > 0 ? "gold" : "muted"}
+              onClick={advisor.sumaNotas > 0 ? () => onShowNotes(advisor) : undefined}
+            />
+            <Stat icon={Calendar}      label="Citas"           value={citasCount}                 color={citasCount > 0                 ? "gold"   : "muted"} />
           </div>
-          {/* Mini resumen de citas si hay */}
-          {citasCount > 0 && (
-            <div className="flex items-center gap-3 mt-1.5 text-[11px] text-cream-dim">
-              {citasShowed > 0  && <span className="text-success-400">{citasShowed} se presentaron</span>}
-              {citasNoShow > 0  && <span className="text-danger-400">{citasNoShow} no show</span>}
-            </div>
-          )}
+          {/* Mini resumen de citas y presupuesto */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1">
+            {citasCount > 0 && citasShowed > 0  && <span className="text-[11px] text-success-400">{citasShowed} se presentaron</span>}
+            {citasCount > 0 && citasNoShow > 0  && <span className="text-[11px] text-danger-400">{citasNoShow} no show</span>}
+            {presupuestoStr && (
+              <span className="text-[11px] text-cream-dim flex items-center gap-1">
+                💰 <span className="text-cream font-medium">{presupuestoStr}</span>
+                <span className="text-cream-dim">en presupuesto ({presupuestoCount} contactos)</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Citas de la semana */}
@@ -663,6 +784,7 @@ export default function AdvisorWeeklyView({ week }) {
   const usingDeep = !!deepStats?.dailyStats;
   const [selectedContact, setSelectedContact] = useState(null);
   const [filterAdvisor,   setFilterAdvisor]   = useState(null);
+  const [notesAdvisor,    setNotesAdvisor]    = useState(null); // para modal de notas
 
   // ── Citas de la semana ────────────────────────────────────────────────────
   const [apptData,    setApptData]    = useState(null);
@@ -756,12 +878,26 @@ export default function AdvisorWeeklyView({ week }) {
         return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep };
       })
       .sort((a, b) => {
-        const sa = a.mensajesEnviados + a.llamadas;
-        const sb = b.mensajesEnviados + b.llamadas;
+        // Score compuesto: mensajes + llamadas×2 + notas×1.5 + notas_llenadas×3
+        const sa = (a.mensajesEnviados || 0) + (a.llamadas || 0) * 2 + (a.sumaNotas || 0) * 1.5 + (a.notasLlenadas || 0) * 3;
+        const sb = (b.mensajesEnviados || 0) + (b.llamadas || 0) * 2 + (b.sumaNotas || 0) * 1.5 + (b.notasLlenadas || 0) * 3;
         if (sb !== sa) return sb - sa;
         return a.name.localeCompare(b.name, "es");
       });
   }, [data, week]);
+
+  // Reordenar incluyendo citas cuando estén disponibles
+  const sortedAdvisors = useMemo(() => {
+    if (!apptsByAdvisor || Object.keys(apptsByAdvisor).length === 0) return advisors;
+    return [...advisors].sort((a, b) => {
+      const aAppts = (apptsByAdvisor[a.name] || []).length;
+      const bAppts = (apptsByAdvisor[b.name] || []).length;
+      const sa = (a.mensajesEnviados || 0) + (a.llamadas || 0) * 2 + (a.sumaNotas || 0) * 1.5 + (a.notasLlenadas || 0) * 3 + aAppts * 2;
+      const sb = (b.mensajesEnviados || 0) + (b.llamadas || 0) * 2 + (b.sumaNotas || 0) * 1.5 + (b.notasLlenadas || 0) * 3 + bAppts * 2;
+      if (sb !== sa) return sb - sa;
+      return a.name.localeCompare(b.name, "es");
+    });
+  }, [advisors, apptsByAdvisor]);
 
   const totals = useMemo(() => {
     const allAppts  = Object.values(apptsByAdvisor).flat();
@@ -798,6 +934,14 @@ export default function AdvisorWeeklyView({ week }) {
 
   return (
     <div className="space-y-6">
+      {/* Modal de notas del asesor */}
+      {notesAdvisor && (
+        <AdvisorNotesModal
+          advisor={notesAdvisor}
+          onClose={() => setNotesAdvisor(null)}
+        />
+      )}
+
       {/* Modal de contacto */}
       {selectedContact && (
         <ContactModal
@@ -860,7 +1004,7 @@ export default function AdvisorWeeklyView({ week }) {
           >
             Todos
           </button>
-          {advisors.map((a) => (
+          {sortedAdvisors.map((a) => (
             <button
               key={a.name}
               onClick={() => setFilterAdvisor(prev => prev === a.name ? null : a.name)}
@@ -903,15 +1047,16 @@ export default function AdvisorWeeklyView({ week }) {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {(filterAdvisor
-            ? advisors.filter(a => a.name === filterAdvisor)
-            : advisors
+            ? sortedAdvisors.filter(a => a.name === filterAdvisor)
+            : sortedAdvisors
           ).map((advisor, i) => (
             <AdvisorCard
               key={advisor.name}
               advisor={advisor}
-              idx={advisors.indexOf(advisor)}
+              idx={i}
               onSelectContact={setSelectedContact}
               appointments={apptsByAdvisor[advisor.name] || []}
+              onShowNotes={setNotesAdvisor}
             />
           ))}
         </div>
