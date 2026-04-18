@@ -931,21 +931,21 @@ export default function AdvisorWeeklyView({ week }) {
       if (c.isCall) {
         activityMap[name].llamadas++;
         if (isOutbound(c.lastMessageDirection)) activityMap[name].llamadasSalientes++;
-        // Registrar contactId para el modal de llamadas
+        // Registrar contactId para el modal (todas las llamadas de la semana)
         if (c.contactId) {
           if (!callsMap[name]) callsMap[name] = new Set();
           callsMap[name].add(c.contactId);
         }
       } else {
-        if (isOutbound(c.lastMessageDirection)) {
-          activityMap[name].mensajesEnviados++;
-          // Registrar contactId para el modal de mensajes
-          if (c.contactId) {
-            if (!messagesMap[name]) messagesMap[name] = new Set();
-            messagesMap[name].add(c.contactId);
-          }
-        }
+        if (isOutbound(c.lastMessageDirection)) activityMap[name].mensajesEnviados++;
         activityMap[name].mensajesPendientes += Number(c.unreadCount) || 0;
+        // Registrar contactId para el modal — todas las convs de mensajes de la semana,
+        // sin filtrar por dirección: el conteo viene de deep stats y puede no coincidir
+        // con lastMessageDirection de la conv (que refleja el ÚLTIMO mensaje, no todos).
+        if (c.contactId) {
+          if (!messagesMap[name]) messagesMap[name] = new Set();
+          messagesMap[name].add(c.contactId);
+        }
       }
     });
 
