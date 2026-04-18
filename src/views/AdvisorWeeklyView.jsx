@@ -663,8 +663,87 @@ function AdvisorNotesModal({ advisor, onClose }) {
   );
 }
 
+// ── Modal de actividad (llamadas / mensajes) del asesor ──────────────────────
+function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
+  useEffect(() => {
+    const h = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const isCalls   = type === "calls";
+  const contacts  = isCalls ? advisor.calledContacts : advisor.messagedContacts;
+  const Icon      = isCalls ? Phone : MessageSquare;
+  const title     = isCalls ? "Llamadas" : "Mensajes enviados";
+  const emptyMsg  = isCalls
+    ? "Sin contactos con llamadas esta semana"
+    : "Sin contactos con mensajes salientes esta semana";
+  const countLabel = isCalls
+    ? `${advisor.llamadas} llamada(s) a ${contacts.length} contacto(s)`
+    : `${advisor.mensajesEnviados} mensaje(s) a ${contacts.length} contacto(s)`;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-md max-h-[80vh] flex flex-col rounded-2xl border border-dark-700 bg-dark-900 shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-dark-700 shrink-0">
+          <Icon size={15} className="text-gold-400" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-cream">{title} — {advisor.name}</p>
+            <p className="text-xs text-cream-dim">{countLabel}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 h-8 w-8 flex items-center justify-center rounded-full hover:bg-dark-800 text-cream-dim hover:text-cream transition-colors"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Lista de contactos */}
+        <div className="flex-1 overflow-y-auto divide-y divide-dark-700/50">
+          {contacts.length === 0 ? (
+            <p className="text-center text-sm text-cream-dim py-10">{emptyMsg}</p>
+          ) : (
+            contacts.map(c => {
+              const nombre = `${c.firstName || ""} ${c.lastName || ""}`.trim() || "(Sin nombre)";
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => { onSelectContact(c); onClose(); }}
+                  className="flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-dark-800/50 active:bg-dark-800/80 transition-colors"
+                >
+                  {/* Iniciales */}
+                  <div className="shrink-0 h-8 w-8 rounded-full bg-dark-700 flex items-center justify-center text-[11px] font-bold text-cream-dim">
+                    {(nombre.split(" ").map(w => w[0]).join("").toUpperCase() || "?").slice(0, 2)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-cream truncate">{nombre}</p>
+                    <p className="text-xs text-cream-dim font-mono">
+                      {c.phone && c.phone !== "(No hay datos)" ? c.phone : "Sin teléfono"}
+                    </p>
+                  </div>
+                  {c.pipelineName && c.pipelineName !== "(No hay datos)" && (
+                    <span className="shrink-0 text-[10px] text-cream-dim bg-dark-700 rounded px-1.5 py-0.5 max-w-[100px] truncate hidden sm:inline">
+                      {c.pipelineName}
+                    </span>
+                  )}
+                  <span className="text-zinc-600 text-xs shrink-0">›</span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Tarjeta de asesor ─────────────────────────────────────────────────────────
-function AdvisorCard({ advisor, idx, onSelectContact, appointments = [], onShowNotes }) {
+function AdvisorCard({ advisor, idx, onSelectContact, appointments = [], onShowNotes, onShowCalls, onShowMessages }) {
   const [expanded, setExpanded] = useState(false);
   const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
   const activo = advisor.mensajesEnviados > 0 || advisor.llamadas > 0;
@@ -719,9 +798,21 @@ function AdvisorCard({ advisor, idx, onSelectContact, appointments = [], onShowN
         <div>
           <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-cream-dim">Actividad de la semana</p>
           <div className="flex gap-1.5 flex-wrap">
-            <Stat icon={MessageSquare} label="Msj. enviados"  value={advisor.mensajesEnviados}  color={advisor.mensajesEnviados > 0   ? "gold"   : "muted"} />
+            <Stat
+              icon={MessageSquare}
+              label="Msj. enviados"
+              value={advisor.mensajesEnviados}
+              color={advisor.mensajesEnviados > 0 ? "gold" : "muted"}
+              onClick={advisor.mensajesEnviados > 0 ? () => onShowMessages(advisor) : undefined}
+            />
             <Stat icon={Inbox}         label="Sin leer"        value={advisor.mensajesPendientes} color={advisor.mensajesPendientes > 0 ? "danger" : "muted"} />
-            <Stat icon={Phone}         label="Llamadas"        value={advisor.llamadas}           color={advisor.llamadas > 0           ? "gold"   : "muted"} />
+            <Stat
+              icon={Phone}
+              label="Llamadas"
+              value={advisor.llamadas}
+              color={advisor.llamadas > 0 ? "gold" : "muted"}
+              onClick={advisor.llamadas > 0 ? () => onShowCalls(advisor) : undefined}
+            />
             <Stat
               icon={FileText}
               label="Notas reg."
@@ -785,6 +876,7 @@ export default function AdvisorWeeklyView({ week }) {
   const [selectedContact, setSelectedContact] = useState(null);
   const [filterAdvisor,   setFilterAdvisor]   = useState(null);
   const [notesAdvisor,    setNotesAdvisor]    = useState(null); // para modal de notas
+  const [activityModal,   setActivityModal]   = useState(null); // { advisor, type: "calls"|"messages" }
 
   // ── Citas de la semana ────────────────────────────────────────────────────
   const [apptData,    setApptData]    = useState(null);
@@ -827,7 +919,9 @@ export default function AdvisorWeeklyView({ week }) {
 
     // Acumular stats por asesor
     // IMPORTANTE: c.isCall viene ya calculado en sync.js — no recalcular aquí
-    const activityMap = {};
+    const activityMap  = {};
+    const callsMap     = {}; // advisorName → Set de contactIds que tuvieron llamada
+    const messagesMap  = {}; // advisorName → Set de contactIds que tuvieron mensaje saliente
     weekConvs.forEach(c => {
       const name = c.assignedToName || "(Sin asignar)";
       if (!activityMap[name]) activityMap[name] = {
@@ -837,8 +931,20 @@ export default function AdvisorWeeklyView({ week }) {
       if (c.isCall) {
         activityMap[name].llamadas++;
         if (isOutbound(c.lastMessageDirection)) activityMap[name].llamadasSalientes++;
+        // Registrar contactId para el modal de llamadas
+        if (c.contactId) {
+          if (!callsMap[name]) callsMap[name] = new Set();
+          callsMap[name].add(c.contactId);
+        }
       } else {
-        if (isOutbound(c.lastMessageDirection)) activityMap[name].mensajesEnviados++;
+        if (isOutbound(c.lastMessageDirection)) {
+          activityMap[name].mensajesEnviados++;
+          // Registrar contactId para el modal de mensajes
+          if (c.contactId) {
+            if (!messagesMap[name]) messagesMap[name] = new Set();
+            messagesMap[name].add(c.contactId);
+          }
+        }
         activityMap[name].mensajesPendientes += Number(c.unreadCount) || 0;
       }
     });
@@ -875,7 +981,12 @@ export default function AdvisorWeeklyView({ week }) {
           const v = Number(c.sumaNotas);
           return sum + (isNaN(v) ? 0 : v);
         }, 0);
-        return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep };
+        // Contactos con actividad esta semana (para modales clickeables)
+        const calledIds   = callsMap[name]    || new Set();
+        const messagedIds = messagesMap[name] || new Set();
+        const calledContacts   = contactList.filter(c => calledIds.has(c.id));
+        const messagedContacts = contactList.filter(c => messagedIds.has(c.id));
+        return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep, calledContacts, messagedContacts };
       })
       .sort((a, b) => {
         // Score compuesto: mensajes + llamadas×2 + notas×1.5 + notas_llenadas×3
@@ -939,6 +1050,16 @@ export default function AdvisorWeeklyView({ week }) {
         <AdvisorNotesModal
           advisor={notesAdvisor}
           onClose={() => setNotesAdvisor(null)}
+        />
+      )}
+
+      {/* Modal de llamadas / mensajes del asesor */}
+      {activityModal && (
+        <AdvisorActivityModal
+          advisor={activityModal.advisor}
+          type={activityModal.type}
+          onClose={() => setActivityModal(null)}
+          onSelectContact={c => { setSelectedContact(c); setActivityModal(null); }}
         />
       )}
 
@@ -1057,6 +1178,8 @@ export default function AdvisorWeeklyView({ week }) {
               onSelectContact={setSelectedContact}
               appointments={apptsByAdvisor[advisor.name] || []}
               onShowNotes={setNotesAdvisor}
+              onShowCalls={a => setActivityModal({ advisor: a, type: "calls" })}
+              onShowMessages={a => setActivityModal({ advisor: a, type: "messages" })}
             />
           ))}
         </div>
