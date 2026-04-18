@@ -679,8 +679,8 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
     ? "Sin contactos con llamadas esta semana"
     : "Sin contactos con mensajes salientes esta semana";
   const countLabel = isCalls
-    ? `${advisor.llamadas} llamada(s) a ${contacts.length} contacto(s)`
-    : `${advisor.mensajesEnviados} mensaje(s) a ${contacts.length} contacto(s)`;
+    ? `${contacts.length} contacto(s) · ${advisor.llamadas} llamada(s) esta semana`
+    : `${contacts.length} contacto(s) · ${advisor.mensajesEnviados} mensaje(s) esta semana`;
 
   return (
     <div
@@ -708,30 +708,37 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
           {contacts.length === 0 ? (
             <p className="text-center text-sm text-cream-dim py-10">{emptyMsg}</p>
           ) : (
-            contacts.map(c => {
+            contacts.map(({ contact: c, body, date }) => {
               const nombre = `${c.firstName || ""} ${c.lastName || ""}`.trim() || "(Sin nombre)";
+              const initials2 = (nombre.split(" ").map(w => w[0]).join("").toUpperCase() || "?").slice(0, 2);
+              const dateStr = date ? new Date(typeof date === "number" ? date : date).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : null;
               return (
                 <button
                   key={c.id}
                   onClick={() => { onSelectContact(c); onClose(); }}
-                  className="flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-dark-800/50 active:bg-dark-800/80 transition-colors"
+                  className="flex items-start gap-3 w-full px-4 py-3 text-left hover:bg-dark-800/50 active:bg-dark-800/80 transition-colors"
                 >
                   {/* Iniciales */}
-                  <div className="shrink-0 h-8 w-8 rounded-full bg-dark-700 flex items-center justify-center text-[11px] font-bold text-cream-dim">
-                    {(nombre.split(" ").map(w => w[0]).join("").toUpperCase() || "?").slice(0, 2)}
+                  <div className="shrink-0 h-9 w-9 rounded-full bg-dark-700 flex items-center justify-center text-[11px] font-bold text-cream-dim mt-0.5">
+                    {initials2}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-cream truncate">{nombre}</p>
-                    <p className="text-xs text-cream-dim font-mono">
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <p className="text-sm font-medium text-cream truncate">{nombre}</p>
+                      {dateStr && <span className="text-[10px] text-cream-dim shrink-0">{dateStr}</span>}
+                    </div>
+                    <p className="text-xs text-cream-dim font-mono mb-1">
                       {c.phone && c.phone !== "(No hay datos)" ? c.phone : "Sin teléfono"}
                     </p>
+                    {body ? (
+                      <p className="text-xs text-cream-muted leading-relaxed line-clamp-2 bg-dark-800/60 rounded px-2 py-1">
+                        {body}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-cream-dim/50 italic">Sin texto disponible</p>
+                    )}
                   </div>
-                  {c.pipelineName && c.pipelineName !== "(No hay datos)" && (
-                    <span className="shrink-0 text-[10px] text-cream-dim bg-dark-700 rounded px-1.5 py-0.5 max-w-[100px] truncate hidden sm:inline">
-                      {c.pipelineName}
-                    </span>
-                  )}
-                  <span className="text-zinc-600 text-xs shrink-0">›</span>
+                  <span className="text-zinc-600 text-xs shrink-0 mt-1">›</span>
                 </button>
               );
             })
@@ -920,8 +927,8 @@ export default function AdvisorWeeklyView({ week }) {
     // Acumular stats por asesor
     // IMPORTANTE: c.isCall viene ya calculado en sync.js — no recalcular aquí
     const activityMap  = {};
-    const callsMap     = {}; // advisorName → Set de contactIds que tuvieron llamada
-    const messagesMap  = {}; // advisorName → Set de contactIds que tuvieron mensaje saliente
+    const callsMap     = {}; // advisorName → Map<contactId, { body, date }>
+    const messagesMap  = {}; // advisorName → Map<contactId, { body, date }>
     weekConvs.forEach(c => {
       const name = c.assignedToName || "(Sin asignar)";
       if (!activityMap[name]) activityMap[name] = {
@@ -931,20 +938,23 @@ export default function AdvisorWeeklyView({ week }) {
       if (c.isCall) {
         activityMap[name].llamadas++;
         if (isOutbound(c.lastMessageDirection)) activityMap[name].llamadasSalientes++;
-        // Registrar contactId para el modal (todas las llamadas de la semana)
         if (c.contactId) {
-          if (!callsMap[name]) callsMap[name] = new Set();
-          callsMap[name].add(c.contactId);
+          if (!callsMap[name]) callsMap[name] = new Map();
+          // Guardar la conv más reciente por contacto
+          const prev = callsMap[name].get(c.contactId);
+          if (!prev || new Date(c.lastMessageDate) > new Date(prev.date)) {
+            callsMap[name].set(c.contactId, { body: c.lastMessageBody, date: c.lastMessageDate });
+          }
         }
       } else {
         if (isOutbound(c.lastMessageDirection)) activityMap[name].mensajesEnviados++;
         activityMap[name].mensajesPendientes += Number(c.unreadCount) || 0;
-        // Registrar contactId para el modal — todas las convs de mensajes de la semana,
-        // sin filtrar por dirección: el conteo viene de deep stats y puede no coincidir
-        // con lastMessageDirection de la conv (que refleja el ÚLTIMO mensaje, no todos).
         if (c.contactId) {
-          if (!messagesMap[name]) messagesMap[name] = new Set();
-          messagesMap[name].add(c.contactId);
+          if (!messagesMap[name]) messagesMap[name] = new Map();
+          const prev = messagesMap[name].get(c.contactId);
+          if (!prev || new Date(c.lastMessageDate) > new Date(prev.date)) {
+            messagesMap[name].set(c.contactId, { body: c.lastMessageBody, date: c.lastMessageDate });
+          }
         }
       }
     });
@@ -988,10 +998,16 @@ export default function AdvisorWeeklyView({ week }) {
         // Contactos con actividad esta semana (para modales clickeables)
         // Se busca en TODOS los contactos (contactsById) porque la asignación en las
         // conversaciones puede diferir de la asignación en el contacto de GHL.
-        const calledIds   = callsMap[name]    || new Set();
-        const messagedIds = messagesMap[name] || new Set();
-        const calledContacts   = [...calledIds].map(id => contactsById[id]).filter(Boolean);
-        const messagedContacts = [...messagedIds].map(id => contactsById[id]).filter(Boolean);
+        const calledConvMap   = callsMap[name]    || new Map();
+        const messagedConvMap = messagesMap[name] || new Map();
+        const calledContacts   = [...calledConvMap.entries()]
+          .map(([id, conv]) => ({ contact: contactsById[id], ...conv }))
+          .filter(item => item.contact)
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+        const messagedContacts = [...messagedConvMap.entries()]
+          .map(([id, conv]) => ({ contact: contactsById[id], ...conv }))
+          .filter(item => item.contact)
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
         return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep, calledContacts, messagedContacts };
       })
       .sort((a, b) => {

@@ -311,9 +311,9 @@ export default async function handler(req, res) {
         assignedToName:       c.assignedTo ? (userMap[c.assignedTo] || "(Sin asignar)") : "(Sin asignar)",
         lastMessageDate:      c.lastMessageDate || c.dateUpdated || null,
         lastMessageDirection: c.lastMessageDirection || null,
+        lastMessageBody:      c.lastMessageBody ? String(c.lastMessageBody).substring(0, 300) : null,
         unreadCount:          Number(c.unreadCount) || 0,
         isCall,
-        // pasar channelType crudo para debug
         channelType,
       };
     });
