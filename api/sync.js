@@ -142,7 +142,7 @@ async function fetchOpportunityMap(locationId) {
 function isCallConv(c) {
   const t = String(c.type || "").toLowerCase();
   const ch = String(c.lastMessageChannel || c.lastMessageType || "").toLowerCase();
-  return t === "type_phone" || t === "phone" || t === "6" || ch === "call" || ch === "phone_call" || ch.includes("call") || ch.includes("phone");
+  return t === "type_phone" || t === "phone" || t === "call" || ch === "call" || ch === "phone_call" || ch.includes("call") || ch.includes("phone");
 }
 
 async function fetchConversations(locationId) {
@@ -303,8 +303,8 @@ export default async function handler(req, res) {
     // no pierde su clasificación de "mensaje".
     const conversations = rawConversations.map(c => {
       const channelType = String(c.type || "").toLowerCase();
-      const isCall = channelType === "type_phone" || channelType === "phone" ||
-                     channelType === "6" || channelType === "call";
+      // GHL conversation types: type_phone/phone = llamada. "6" = WhatsApp (NO es llamada).
+      const isCall = channelType === "type_phone" || channelType === "phone" || channelType === "call";
       return {
         id:                   c.id,
         contactId:            c.contactId,
