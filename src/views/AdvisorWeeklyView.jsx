@@ -706,7 +706,18 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
         {/* Lista de contactos */}
         <div className="flex-1 overflow-y-auto divide-y divide-dark-700/50">
           {contacts.length === 0 ? (
-            <p className="text-center text-sm text-cream-dim py-10">{emptyMsg}</p>
+            <div className="p-4 flex flex-col gap-2">
+              <p className="text-center text-sm text-cream-dim py-4">{emptyMsg}</p>
+              {advisor._debug && (
+                <div className="rounded-lg bg-dark-800 border border-dark-600 p-3 text-[11px] font-mono text-cream-dim space-y-1">
+                  <p className="text-gold-400 font-bold mb-1">🔍 Debug</p>
+                  <p>Convs semana: <span className="text-cream">{advisor._debug.weekConvsTotal}</span></p>
+                  <p>Contactos asesor: <span className="text-cream">{advisor._debug.contactListCount}</span></p>
+                  <p>IDs contactos: <span className="text-cream">{advisor._debug.contactIds.join(", ") || "—"}</span></p>
+                  <p>IDs convs sample: <span className="text-cream">{advisor._debug.weekConvSample.join(", ") || "—"}</span></p>
+                </div>
+              )}
+            </div>
           ) : (
             contacts.map(({ contact: c, body, date }) => {
               const nombre = `${c.firstName || ""} ${c.lastName || ""}`.trim() || "(Sin nombre)";
@@ -1002,7 +1013,14 @@ export default function AdvisorWeeklyView({ week }) {
           .filter(({ conv }) => conv && !conv.isCall)
           .map(({ contact, conv }) => ({ contact, body: conv.lastMessageBody, date: conv.lastMessageDate }))
           .sort((a, b) => new Date(b.date) - new Date(a.date));
-        return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep, calledContacts, messagedContacts };
+        return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep, calledContacts, messagedContacts,
+          _debug: {
+            weekConvsTotal:   weekConvs.length,
+            contactListCount: contactList.length,
+            contactIds:       contactList.map(c => c.id).slice(0, 4),
+            weekConvSample:   [...weekConvByContact.keys()].slice(0, 4),
+          },
+        };
       })
       .sort((a, b) => {
         // Score compuesto: mensajes + llamadas×2 + notas×1.5 + notas_llenadas×3
