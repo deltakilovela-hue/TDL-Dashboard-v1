@@ -949,6 +949,10 @@ export default function AdvisorWeeklyView({ week }) {
       }
     });
 
+    // Lookup global id → contacto (para modales de llamadas/mensajes)
+    const contactsById = {};
+    contacts.forEach(c => { if (c.id) contactsById[c.id] = c; });
+
     // Contactos por asesor
     const contactsMap = {};
     contacts.forEach(c => {
@@ -982,10 +986,12 @@ export default function AdvisorWeeklyView({ week }) {
           return sum + (isNaN(v) ? 0 : v);
         }, 0);
         // Contactos con actividad esta semana (para modales clickeables)
+        // Se busca en TODOS los contactos (contactsById) porque la asignación en las
+        // conversaciones puede diferir de la asignación en el contacto de GHL.
         const calledIds   = callsMap[name]    || new Set();
         const messagedIds = messagesMap[name] || new Set();
-        const calledContacts   = contactList.filter(c => calledIds.has(c.id));
-        const messagedContacts = contactList.filter(c => messagedIds.has(c.id));
+        const calledContacts   = [...calledIds].map(id => contactsById[id]).filter(Boolean);
+        const messagedContacts = [...messagedIds].map(id => contactsById[id]).filter(Boolean);
         return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep, calledContacts, messagedContacts };
       })
       .sort((a, b) => {
