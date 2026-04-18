@@ -927,8 +927,9 @@ export default function AdvisorWeeklyView({ week }) {
     // Acumular stats por asesor
     // IMPORTANTE: c.isCall viene ya calculado en sync.js — no recalcular aquí
     const activityMap  = {};
-    const callsMap     = {}; // advisorName → Map<contactId, { body, date }>
-    const messagesMap  = {}; // advisorName → Map<contactId, { body, date }>
+    // Lookup global: contactId → la conversación más reciente de esta semana (cualquier asesor)
+    // Se usa para el modal de llamadas/mensajes sin depender del campo assignedTo de la conv
+    const weekConvByContact = new Map();
     weekConvs.forEach(c => {
       const name = c.assignedToName || "(Sin asignar)";
       if (!activityMap[name]) activityMap[name] = {
@@ -938,23 +939,15 @@ export default function AdvisorWeeklyView({ week }) {
       if (c.isCall) {
         activityMap[name].llamadas++;
         if (isOutbound(c.lastMessageDirection)) activityMap[name].llamadasSalientes++;
-        if (c.contactId) {
-          if (!callsMap[name]) callsMap[name] = new Map();
-          // Guardar la conv más reciente por contacto
-          const prev = callsMap[name].get(c.contactId);
-          if (!prev || new Date(c.lastMessageDate) > new Date(prev.date)) {
-            callsMap[name].set(c.contactId, { body: c.lastMessageBody, date: c.lastMessageDate });
-          }
-        }
       } else {
         if (isOutbound(c.lastMessageDirection)) activityMap[name].mensajesEnviados++;
         activityMap[name].mensajesPendientes += Number(c.unreadCount) || 0;
-        if (c.contactId) {
-          if (!messagesMap[name]) messagesMap[name] = new Map();
-          const prev = messagesMap[name].get(c.contactId);
-          if (!prev || new Date(c.lastMessageDate) > new Date(prev.date)) {
-            messagesMap[name].set(c.contactId, { body: c.lastMessageBody, date: c.lastMessageDate });
-          }
+      }
+      // Registrar conv más reciente por contacto (sin filtrar por asesor)
+      if (c.contactId) {
+        const prev = weekConvByContact.get(c.contactId);
+        if (!prev || new Date(c.lastMessageDate) > new Date(prev.lastMessageDate)) {
+          weekConvByContact.set(c.contactId, c);
         }
       }
     });
@@ -996,17 +989,18 @@ export default function AdvisorWeeklyView({ week }) {
           return sum + (isNaN(v) ? 0 : v);
         }, 0);
         // Contactos con actividad esta semana (para modales clickeables)
-        // Se busca en TODOS los contactos (contactsById) porque la asignación en las
-        // conversaciones puede diferir de la asignación en el contacto de GHL.
-        const calledConvMap   = callsMap[name]    || new Map();
-        const messagedConvMap = messagesMap[name] || new Map();
-        const calledContacts   = [...calledConvMap.entries()]
-          .map(([id, conv]) => ({ contact: contactsById[id], ...conv }))
-          .filter(item => item.contact)
+        // Estrategia: buscar qué contactos del asesor tuvieron CUALQUIER conversación
+        // esta semana, sin importar a quién esté asignada la conv en GHL.
+        // Esto evita el problema de assignedTo nulo o inconsistente en convs.
+        const calledContacts   = contactList
+          .map(c => ({ contact: c, conv: weekConvByContact.get(c.id) }))
+          .filter(({ conv }) => conv && conv.isCall)
+          .map(({ contact, conv }) => ({ contact, body: conv.lastMessageBody, date: conv.lastMessageDate }))
           .sort((a, b) => new Date(b.date) - new Date(a.date));
-        const messagedContacts = [...messagedConvMap.entries()]
-          .map(([id, conv]) => ({ contact: contactsById[id], ...conv }))
-          .filter(item => item.contact)
+        const messagedContacts = contactList
+          .map(c => ({ contact: c, conv: weekConvByContact.get(c.id) }))
+          .filter(({ conv }) => conv && !conv.isCall)
+          .map(({ contact, conv }) => ({ contact, body: conv.lastMessageBody, date: conv.lastMessageDate }))
           .sort((a, b) => new Date(b.date) - new Date(a.date));
         return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep, calledContacts, messagedContacts };
       })
