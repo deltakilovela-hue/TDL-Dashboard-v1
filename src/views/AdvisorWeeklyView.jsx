@@ -714,7 +714,8 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
                   <p>Convs semana: <span className="text-cream">{advisor._debug.weekConvsTotal}</span></p>
                   <p>Contactos asesor: <span className="text-cream">{advisor._debug.contactListCount}</span></p>
                   <p>IDs contactos: <span className="text-cream">{advisor._debug.contactIds.join(", ") || "—"}</span></p>
-                  <p>IDs convs sample: <span className="text-cream">{advisor._debug.weekConvSample.join(", ") || "—"}</span></p>
+                  <p>IDs msgs sample: <span className="text-cream">{advisor._debug.weekMsgSample.join(", ") || "—"}</span></p>
+                  <p>IDs calls sample: <span className="text-cream">{advisor._debug.weekCallSample.join(", ") || "—"}</span></p>
                 </div>
               )}
             </div>
@@ -938,9 +939,10 @@ export default function AdvisorWeeklyView({ week }) {
     // Acumular stats por asesor
     // IMPORTANTE: c.isCall viene ya calculado en sync.js — no recalcular aquí
     const activityMap  = {};
-    // Lookup global: contactId → la conversación más reciente de esta semana (cualquier asesor)
-    // Se usa para el modal de llamadas/mensajes sin depender del campo assignedTo de la conv
-    const weekConvByContact = new Map();
+    // Dos mapas separados: uno para llamadas, otro para mensajes
+    // (un contacto puede tener ambos tipos de conv esta semana)
+    const weekCallByContact    = new Map(); // contactId → conv más reciente tipo llamada
+    const weekMessageByContact = new Map(); // contactId → conv más reciente tipo mensaje
     weekConvs.forEach(c => {
       const name = c.assignedToName || "(Sin asignar)";
       if (!activityMap[name]) activityMap[name] = {
@@ -950,15 +952,18 @@ export default function AdvisorWeeklyView({ week }) {
       if (c.isCall) {
         activityMap[name].llamadas++;
         if (isOutbound(c.lastMessageDirection)) activityMap[name].llamadasSalientes++;
+        if (c.contactId) {
+          const prev = weekCallByContact.get(c.contactId);
+          if (!prev || new Date(c.lastMessageDate) > new Date(prev.lastMessageDate))
+            weekCallByContact.set(c.contactId, c);
+        }
       } else {
         if (isOutbound(c.lastMessageDirection)) activityMap[name].mensajesEnviados++;
         activityMap[name].mensajesPendientes += Number(c.unreadCount) || 0;
-      }
-      // Registrar conv más reciente por contacto (sin filtrar por asesor)
-      if (c.contactId) {
-        const prev = weekConvByContact.get(c.contactId);
-        if (!prev || new Date(c.lastMessageDate) > new Date(prev.lastMessageDate)) {
-          weekConvByContact.set(c.contactId, c);
+        if (c.contactId) {
+          const prev = weekMessageByContact.get(c.contactId);
+          if (!prev || new Date(c.lastMessageDate) > new Date(prev.lastMessageDate))
+            weekMessageByContact.set(c.contactId, c);
         }
       }
     });
@@ -999,26 +1004,25 @@ export default function AdvisorWeeklyView({ week }) {
           const v = Number(c.sumaNotas);
           return sum + (isNaN(v) ? 0 : v);
         }, 0);
-        // Contactos con actividad esta semana (para modales clickeables)
-        // Estrategia: buscar qué contactos del asesor tuvieron CUALQUIER conversación
-        // esta semana, sin importar a quién esté asignada la conv en GHL.
-        // Esto evita el problema de assignedTo nulo o inconsistente en convs.
+        // Contactos con actividad esta semana — mapas separados por tipo
+        // para no perder mensajes cuando el conv más reciente es una llamada y viceversa
         const calledContacts   = contactList
-          .map(c => ({ contact: c, conv: weekConvByContact.get(c.id) }))
-          .filter(({ conv }) => conv && conv.isCall)
+          .map(c => ({ contact: c, conv: weekCallByContact.get(c.id) }))
+          .filter(({ conv }) => conv)
           .map(({ contact, conv }) => ({ contact, body: conv.lastMessageBody, date: conv.lastMessageDate }))
           .sort((a, b) => new Date(b.date) - new Date(a.date));
         const messagedContacts = contactList
-          .map(c => ({ contact: c, conv: weekConvByContact.get(c.id) }))
-          .filter(({ conv }) => conv && !conv.isCall)
+          .map(c => ({ contact: c, conv: weekMessageByContact.get(c.id) }))
+          .filter(({ conv }) => conv)
           .map(({ contact, conv }) => ({ contact, body: conv.lastMessageBody, date: conv.lastMessageDate }))
           .sort((a, b) => new Date(b.date) - new Date(a.date));
         return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep, calledContacts, messagedContacts,
           _debug: {
-            weekConvsTotal:   weekConvs.length,
-            contactListCount: contactList.length,
-            contactIds:       contactList.map(c => c.id).slice(0, 4),
-            weekConvSample:   [...weekConvByContact.keys()].slice(0, 4),
+            weekConvsTotal:    weekConvs.length,
+            contactListCount:  contactList.length,
+            contactIds:        contactList.map(c => c.id).slice(0, 4),
+            weekMsgSample:     [...weekMessageByContact.keys()].slice(0, 4),
+            weekCallSample:    [...weekCallByContact.keys()].slice(0, 4),
           },
         };
       })
