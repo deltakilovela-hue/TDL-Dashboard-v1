@@ -242,27 +242,51 @@ function AdvisorHistory({ advisorName, deepStats, currentWeek, onWeekClick }) {
   );
 }
 
-// ── Campos del formulario ─────────────────────────────────────────────────────
-const FORM_FIELDS = [
-  { key: "nivelInteres",   label: "Nivel de interés"  },
-  { key: "presupuesto",    label: "Presupuesto"        },
-  { key: "financiamiento", label: "Financiamiento"     },
-  { key: "deseaCita",      label: "¿Desea cita?"       },
-  { key: "medioContacto",  label: "Medio de contacto"  },
+// ── Campos de ambas encuestas (para calcular completion en la tarjeta) ────────
+const FIELDS_PC = [
+  { key: "requieroMasTiempo"  },
+  { key: "medioContacto"      },
+  { key: "nivelInteres"       },
+  { key: "deseaCita"          },
+  { key: "presupuesto"        },
+  { key: "financiamiento"     },
+  { key: "notaPrimerContacto" },
+  { key: "funciones"          },
+  { key: "notaSeguimiento"    },
 ];
+const FIELDS_CIERRE = [
+  { key: "necesitaMasTiempo"  },
+  { key: "descartado"         },
+  { key: "sePresentoCita"     },
+  { key: "tipoCita"           },
+  { key: "nivelInteresPost"   },
+  { key: "queFaltaCerrar"     },
+  { key: "requiereCloser"     },
+  { key: "fechaSeguimiento"   },
+  { key: "notaCierre"         },
+];
+const ALL_FORM_FIELDS = [...FIELDS_PC, ...FIELDS_CIERRE];
 
 // ── Campos de notas de actividad ──────────────────────────────────────────────
 const NOTE_FIELDS = [
-  { key: "notaPrimerContacto", label: "Nota primer contacto" },
-  { key: "notaSeguimiento",    label: "Nota seguimiento"     },
-  { key: "notaCierre",         label: "Nota cierre"          },
+  { key: "notaPrimerContacto" },
+  { key: "notaSeguimiento"    },
+  { key: "notaCierre"         },
 ];
 
 function hasValue(v) { return v && v !== "(No hay datos)"; }
 
 function formScore(contact) {
-  const filled = FORM_FIELDS.filter(f => hasValue(contact[f.key])).length;
-  return { filled, total: FORM_FIELDS.length, pct: Math.round((filled / FORM_FIELDS.length) * 100) };
+  const pcFilled     = FIELDS_PC.filter(f => hasValue(contact[f.key])).length;
+  const cierreFilled = FIELDS_CIERRE.filter(f => hasValue(contact[f.key])).length;
+  const filled = pcFilled + cierreFilled;
+  const total  = ALL_FORM_FIELDS.length;
+  return {
+    filled, total,
+    pct: Math.round((filled / total) * 100),
+    pcFilled, pcTotal: FIELDS_PC.length,
+    cierreFilled, cierreTotal: FIELDS_CIERRE.length,
+  };
 }
 
 // Cuántas notas tiene llenadas este contacto
@@ -417,25 +441,41 @@ function Stat({ icon: Icon, label, value, color = "muted" }) {
 function FormBar({ contacts }) {
   if (contacts.length === 0) return <p className="text-xs text-cream-dim">Sin contactos asignados</p>;
 
-  const scores  = contacts.map(c => formScore(c));
-  const avgPct  = Math.round(scores.reduce((s, x) => s + x.pct, 0) / scores.length);
-  const avgFill = Math.round(scores.reduce((s, x) => s + x.filled, 0) / scores.length);
-  const completos = contacts.filter(c => formScore(c).pct >= 80).length;
+  const scores = contacts.map(c => formScore(c));
 
-  const barColor  = avgPct >= 80 ? "bg-success-400" : avgPct >= 40 ? "bg-gold-500" : "bg-danger-400/70";
-  const textColor = avgPct >= 80 ? "text-success-400" : avgPct >= 40 ? "text-gold-400" : "text-danger-400";
+  const avgPC        = Math.round(scores.reduce((s, x) => s + x.pcFilled,     0) / scores.length);
+  const avgCierre    = Math.round(scores.reduce((s, x) => s + x.cierreFilled, 0) / scores.length);
+  const avgPCpct     = Math.round((avgPC     / FIELDS_PC.length)     * 100);
+  const avgCierrepct = Math.round((avgCierre / FIELDS_CIERRE.length) * 100);
+  const completos    = contacts.filter(c => formScore(c).pct >= 80).length;
+
+  const barPC     = avgPCpct     >= 80 ? "bg-success-400" : avgPCpct     >= 40 ? "bg-gold-500" : "bg-danger-400/70";
+  const barCierre = avgCierrepct >= 80 ? "bg-success-400" : avgCierrepct >= 40 ? "bg-gold-500" : "bg-danger-400/70";
+  const txtPC     = avgPCpct     >= 80 ? "text-success-400" : avgPCpct     >= 40 ? "text-gold-400" : "text-danger-400";
+  const txtCierre = avgCierrepct >= 80 ? "text-success-400" : avgCierrepct >= 40 ? "text-gold-400" : "text-danger-400";
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between text-[11px]">
-        <span className="text-cream-dim">Formulario promedio</span>
-        <span className={textColor}>{avgFill}/{FORM_FIELDS.length} campos · {avgPct}%</span>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-cream-dim">Enc. Primer Contacto</span>
+          <span className={txtPC}>{avgPC}/{FIELDS_PC.length} · {avgPCpct}%</span>
+        </div>
+        <div className="h-1.5 w-full rounded-full bg-dark-700">
+          <div className={`h-1.5 rounded-full transition-all ${barPC}`} style={{ width: `${avgPCpct}%` }} />
+        </div>
       </div>
-      <div className="h-1.5 w-full rounded-full bg-dark-700">
-        <div className={`h-1.5 rounded-full transition-all ${barColor}`} style={{ width: `${avgPct}%` }} />
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-cream-dim">Enc. Cierre Comercial</span>
+          <span className={txtCierre}>{avgCierre}/{FIELDS_CIERRE.length} · {avgCierrepct}%</span>
+        </div>
+        <div className="h-1.5 w-full rounded-full bg-dark-700">
+          <div className={`h-1.5 rounded-full transition-all ${barCierre}`} style={{ width: `${avgCierrepct}%` }} />
+        </div>
       </div>
       <p className="text-[11px] text-cream-dim">
-        <span className={completos > 0 ? "text-cream" : ""}>{completos}</span> de {contacts.length} con formulario completo
+        <span className={completos > 0 ? "text-cream" : ""}>{completos}</span> de {contacts.length} con ambas encuestas completas
       </p>
     </div>
   );
@@ -448,9 +488,11 @@ function ContactList({ contacts, onSelectContact }) {
   return (
     <div className="flex flex-col divide-y divide-dark-700/50 rounded-xl border border-dark-700 bg-dark-800/40 overflow-hidden">
       {contacts.map(c => {
-        const score = formScore(c);
-        const pctColor = score.pct >= 80 ? "text-success-400" : score.pct >= 40 ? "text-gold-400" : "text-danger-400";
-        const barColor = score.pct >= 80 ? "bg-success-400" : score.pct >= 40 ? "bg-gold-500" : "bg-danger-400/70";
+        const score    = formScore(c);
+        const pcPct    = Math.round((score.pcFilled     / FIELDS_PC.length)     * 100);
+        const cierrePct= Math.round((score.cierreFilled / FIELDS_CIERRE.length) * 100);
+        const barPC    = pcPct     >= 80 ? "bg-success-400" : pcPct     >= 40 ? "bg-gold-500" : "bg-danger-400/70";
+        const barCierre= cierrePct >= 80 ? "bg-success-400" : cierrePct >= 40 ? "bg-gold-500" : "bg-danger-400/70";
         const nombre   = `${c.firstName} ${c.lastName}`.trim() || "(Sin nombre)";
 
         return (
@@ -472,11 +514,21 @@ function ContactList({ contacts, onSelectContact }) {
               </span>
             )}
 
-            {/* Barra de formulario mini */}
-            <div className="flex flex-col items-end gap-0.5 shrink-0 w-16">
-              <span className={`text-[10px] font-medium ${pctColor}`}>{score.pct}%</span>
-              <div className="h-1 w-14 rounded-full bg-dark-700">
-                <div className={`h-1 rounded-full ${barColor}`} style={{ width: `${score.pct}%` }} />
+            {/* Barras PC + Cierre */}
+            <div className="flex flex-col gap-0.5 shrink-0 w-20">
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] text-cream-dim w-5">PC</span>
+                <div className="h-1 flex-1 rounded-full bg-dark-700">
+                  <div className={`h-1 rounded-full ${barPC}`} style={{ width: `${pcPct}%` }} />
+                </div>
+                <span className="text-[9px] text-cream-dim w-6 text-right">{pcPct}%</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] text-cream-dim w-5">CC</span>
+                <div className="h-1 flex-1 rounded-full bg-dark-700">
+                  <div className={`h-1 rounded-full ${barCierre}`} style={{ width: `${cierrePct}%` }} />
+                </div>
+                <span className="text-[9px] text-cream-dim w-6 text-right">{cierrePct}%</span>
               </div>
             </div>
 
