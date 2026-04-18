@@ -161,11 +161,52 @@ async function fetchConversations(locationId) {
   return all;
 }
 
+// ── Enriquecer custom fields con GET individual (bulk no los devuelve) ─────────
+// GHL's GET /contacts/ (bulk) no incluye customField values confiablemente.
+// GET /contacts/{id} (individual) sí los incluye. Hacemos esto en batches.
+async function fetchCustomFieldsForContacts(contactIds) {
+  const enrichMap = {};
+  const ids  = [...new Set(contactIds)].slice(0, 300); // máx 300 para no agotar timeout
+  const BATCH = 10;
+  let done = 0;
+
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const batch = ids.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(id => ghlGet(`/contacts/${id}`))
+    );
+    results.forEach((r, j) => {
+      if (r.status === "fulfilled") {
+        const raw    = r.value.contact || r.value;
+        const fields = raw.customField || raw.customFields || [];
+        enrichMap[batch[j]] = fields;
+        done++;
+      }
+    });
+  }
+
+  console.log(`enriched customFields: ${done}/${ids.length}`);
+  return enrichMap;
+}
+
 // ── Normalizar contacto ───────────────────────────────────────────────────────
-function normalizeContact(c, userMap, oppMap, cfMap) {
+function normalizeContact(c, userMap, oppMap, cfMap, enrichMap = {}) {
   const custom = {};
-  (c.customField || []).forEach(f => {
+
+  // Primero procesar datos bulk (a veces vienen vacíos en customField)
+  (c.customField || c.customFields || []).forEach(f => {
     const val = f.value ?? "";
+    if (!val) return; // saltar entradas vacías
+    if (f.id) custom[f.id] = val;
+    if (f.fieldKey) { custom[f.fieldKey] = val; custom[f.fieldKey.replace(/^contact\./, "")] = val; }
+    const dn = (f.id && cfMap[f.id]) || (f.fieldKey && cfMap[f.fieldKey]) || (f.fieldKey && cfMap[f.fieldKey.replace(/^contact\./, "")]) || "";
+    if (dn) custom[dn] = val;
+  });
+
+  // Luego sobreescribir con datos del GET individual (más confiable)
+  (enrichMap[c.id] || []).forEach(f => {
+    const val = f.value ?? "";
+    if (!val) return;
     if (f.id) custom[f.id] = val;
     if (f.fieldKey) { custom[f.fieldKey] = val; custom[f.fieldKey.replace(/^contact\./, "")] = val; }
     const dn = (f.id && cfMap[f.id]) || (f.fieldKey && cfMap[f.fieldKey]) || (f.fieldKey && cfMap[f.fieldKey.replace(/^contact\./, "")]) || "";
@@ -240,8 +281,15 @@ export default async function handler(req, res) {
       fetchOpportunityMap(LOCATION_ID),
     ]);
 
-    const userMap  = buildUserMap(rawUsers);
-    const contacts = rawContacts.map(c => normalizeContact(c, userMap, oppMap, cfMap));
+    const userMap = buildUserMap(rawUsers);
+
+    // Enriquecer con custom fields individuales para contactos en pipelines prioritarios
+    // El bulk endpoint de GHL no devuelve customField values confiablemente
+    const oppContactIds = Object.keys(oppMap);
+    console.log(`Enriqueciendo ${oppContactIds.length} contactos con custom fields...`);
+    const enrichMap = await fetchCustomFieldsForContacts(oppContactIds);
+
+    const contacts = rawContacts.map(c => normalizeContact(c, userMap, oppMap, cfMap, enrichMap));
     const usuarios = rawUsers.map(u => ({
       id: u.id,
       name: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "(Sin nombre)",
