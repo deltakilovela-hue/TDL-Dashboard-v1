@@ -671,16 +671,26 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  const isCalls   = type === "calls";
-  const contacts  = isCalls ? advisor.calledContacts : advisor.messagedContacts;
-  const Icon      = isCalls ? Phone : MessageSquare;
-  const title     = isCalls ? "Llamadas" : "Mensajes enviados";
-  const emptyMsg  = isCalls
-    ? "Sin contactos con llamadas esta semana"
-    : "Sin contactos con mensajes salientes esta semana";
-  const countLabel = isCalls
-    ? `${contacts.length} contacto(s) · ${advisor.llamadas} llamada(s) esta semana`
-    : `${contacts.length} contacto(s) · ${advisor.mensajesEnviados} mensaje(s) esta semana`;
+  const isCalls    = type === "calls";
+  const Icon       = isCalls ? Phone : MessageSquare;
+  const title      = isCalls ? "Llamadas" : "Mensajes enviados";
+
+  // Contactos cruzados con conversaciones (preciso, requiere sync actualizado)
+  const crossedContacts = isCalls ? advisor.calledContacts : advisor.messagedContacts;
+
+  // Fallback: si el cruce da vacío, mostrar todos los contactos del asesor
+  // ordenados por actividad reciente. Esto ocurre cuando el cache es antiguo.
+  const useFallback = crossedContacts.length === 0;
+  const contacts = useFallback
+    ? advisor.contacts
+        .filter(c => c.dateUpdated && c.dateUpdated !== "(No hay datos)")
+        .sort((a, b) => new Date(b.dateUpdated) - new Date(a.dateUpdated))
+        .map(c => ({ contact: c, body: null, date: c.dateUpdated }))
+    : crossedContacts;
+
+  const countLabel = useFallback
+    ? `${contacts.length} contacto(s) asignados · ${isCalls ? advisor.llamadas : advisor.mensajesEnviados} ${isCalls ? "llamada(s)" : "mensaje(s)"} esta semana`
+    : `${contacts.length} contacto(s) · ${isCalls ? advisor.llamadas : advisor.mensajesEnviados} ${isCalls ? "llamada(s)" : "mensaje(s)"} esta semana`;
 
   return (
     <div
@@ -703,10 +713,17 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
           </button>
         </div>
 
+        {/* Aviso fallback */}
+        {useFallback && contacts.length > 0 && (
+          <div className="px-4 py-2 bg-gold-500/10 border-b border-gold-500/20 shrink-0">
+            <p className="text-[11px] text-gold-400">⚠ Sincroniza para ver solo los contactos de esta semana. Mostrando todos los contactos asignados.</p>
+          </div>
+        )}
+
         {/* Lista de contactos */}
         <div className="flex-1 overflow-y-auto divide-y divide-dark-700/50">
           {contacts.length === 0 ? (
-            <p className="text-center text-sm text-cream-dim py-10">{emptyMsg}</p>
+            <p className="text-center text-sm text-cream-dim py-10">Sin contactos asignados</p>
           ) : (
             contacts.map(({ contact: c, body, date }) => {
               const nombre = `${c.firstName || ""} ${c.lastName || ""}`.trim() || "(Sin nombre)";
