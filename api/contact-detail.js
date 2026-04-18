@@ -36,11 +36,20 @@ export default async function handler(req, res) {
   if (!API_KEY || !LOCATION_ID) return res.status(500).json({ ok: false, error: "Faltan env vars" });
 
   try {
-    // Fetch en paralelo: notas + conversaciones del contacto
-    const [notesRes, convsRes] = await Promise.allSettled([
+    // Fetch en paralelo: datos del contacto + notas + conversaciones
+    const [contactRes, notesRes, convsRes] = await Promise.allSettled([
+      ghlGet(`/contacts/${contactId}`),
       ghlGet(`/contacts/${contactId}/notes`),
       ghlGet("/conversations/search", { contactId, locationId: LOCATION_ID, limit: "10" }),
     ]);
+
+    // Campos personalizados raw (para debug y enriquecer el modal)
+    const rawContact = contactRes.status === "fulfilled" ? (contactRes.value.contact || contactRes.value || {}) : {};
+    const rawCustomFields = (rawContact.customField || rawContact.customFields || []).map(f => ({
+      id:       f.id       || null,
+      fieldKey: f.fieldKey || null,
+      value:    f.value    ?? null,
+    }));
 
     const notes = notesRes.status === "fulfilled"
       ? (notesRes.value.notes || []).map(n => ({
@@ -113,7 +122,8 @@ export default async function handler(req, res) {
         totalNotes: notes.length,
       },
       notes,
-      messages,          // últimos 50 mensajes, más reciente primero
+      messages,
+      rawCustomFields,   // campos GHL brutos — útil para debug y verificar IDs
       conversation: mainConv ? {
         id:           mainConv.id,
         unreadCount:  mainConv.unreadCount || 0,

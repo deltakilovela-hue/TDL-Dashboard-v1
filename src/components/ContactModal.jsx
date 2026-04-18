@@ -552,6 +552,23 @@ export default function ContactModal({ contact, onClose }) {
                   <span className="text-zinc-200">{f.value}</span>
                 </div>
               ))}
+
+              {/* Campos GHL brutos — debug */}
+              {detail?.rawCustomFields?.length > 0 && (
+                <details className="mt-4">
+                  <summary className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-300 select-none py-1">
+                    🔍 Campos GHL brutos ({detail.rawCustomFields.filter(f => f.value).length} con valor)
+                  </summary>
+                  <div className="mt-2 rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+                    {detail.rawCustomFields.filter(f => f.value !== null && f.value !== "").map((f, i) => (
+                      <div key={i} className="flex gap-2 px-3 py-1.5 border-b border-zinc-800/60 last:border-0">
+                        <span className="text-[10px] font-mono text-zinc-600 w-44 shrink-0 truncate" title={f.id}>{f.id}</span>
+                        <span className="text-[10px] text-zinc-400 flex-1 truncate">{String(f.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
           )}
         </div>

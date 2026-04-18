@@ -188,23 +188,26 @@ function normalizeContact(c, userMap, oppMap, cfMap) {
     tags:         Array.isArray(c.tags) ? c.tags.join(", ") || "(No hay datos)" : (c.tags || "(No hay datos)"),
     pipelineName:  opp.pipeline || "(No hay datos)",
     pipelineStage: opp.stage    || "(No hay datos)",
-    nivelInteres:    get("_nivel_de_interes_del_prospecto",      "nivel_de_interes_del_prospecto"),
-    presupuesto:     get("_presupuesto_estimado",                "presupuesto_estimado"),
-    financiamiento:  get("_cuenta_con_financiamiento_o_credito", "cuenta_con_financiamiento_o_credito"),
-    deseaCita:       get("_desea_agendar_una_cita",              "desea_agendar_una_cita"),
-    medioContacto:   get("medio_de_contacto_de_preferencia"),
-    funciones:       get("funciones_de_lead"),
-    sePresentoCita:  get("_el_prospecto_se_presento_a_la_cita"),
-    nivelInteresPost:get("_nivel_de_interes_despues_de_la_cita"),
-    queFaltaCerrar:  get("_que_le_hace_falta_para_cerrar_la_operacion"),
-    requiereCloser:  get("_requiere_intervencion_de_un_closer_u_otro_equipo"),
-    fechaSeguimiento:get("_fecha_tentativa_de_seguimientocierre"),
+    // ── Encuesta Primer Contacto ───────────────────────────────────────────────
+    // IDs del campo GHL como primer argumento (lookup más confiable)
+    nivelInteres:    get("IVDOKjoJDMtoCcYqzlPH", "_nivel_de_interes_del_prospecto",      "nivel_de_interes_del_prospecto"),
+    presupuesto:     get("XPJiJOI5nVLNXzEXlrDp", "_presupuesto_estimado",                "presupuesto_estimado"),
+    financiamiento:  get("oLYtW2bv1h8HO11fyJ86", "_cuenta_con_financiamiento_o_credito", "cuenta_con_financiamiento_o_credito"),
+    deseaCita:       get("GhEmwRVvGcPSap7NnZsP", "_desea_agendar_una_cita",              "desea_agendar_una_cita"),
+    medioContacto:   get("D1bAtBu1yhE3aigqdLCj", "medio_de_contacto_de_preferencia"),
+    funciones:       get("w5UHR3yXRimaT1wTYpyb", "funciones_de_lead"),
+    // ── Encuesta Cierre Comercial ──────────────────────────────────────────────
+    sePresentoCita:  get("mXKBwOYrchFLnzyllrwf", "_el_prospecto_se_presento_a_la_cita"),
+    nivelInteresPost:get("x1bW12U6t73E4Xh9RiI2", "_nivel_de_interes_despues_de_la_cita"),
+    queFaltaCerrar:  get("H8SyacUea1rwdbx8JzEU", "_que_le_hace_falta_para_cerrar_la_operacion"),
+    requiereCloser:  get("mPBM192trmYBC5ZY0xxo", "_requiere_intervencion_de_un_closer_u_otro_equipo"),
+    fechaSeguimiento:get("TFPJmo94s7rXwhYmJNQb", "_fecha_tentativa_de_seguimientocierre"),
     // ── Notas de actividad del asesor ──────────────────────────────────────────
-    notaPrimerContacto: get("comentario_de_nota_seguimiento_frio_"),  // "Comentario de NOTA primer contacto"
-    notaSeguimiento:    get("comentario_de_seguimiento_externo"),      // "Comentario de seguimiento externo"
-    notaCierre:         get("comentario_nota_cita_por_confirmar"),     // "Comentario NOTA Cierre comercial"
+    notaPrimerContacto: get("UaloobEyDQTsCu41WUnU", "comentario_de_nota_seguimiento_frio_"),
+    notaSeguimiento:    get("pJ7gXNsKRQaTz6DjICcz", "comentario_de_seguimiento_externo"),
+    notaCierre:         get("KARIFTmgIzdlCPBYX0IL", "comentario_nota_cita_por_confirmar"),
     // ── Historial y contador de notas ──────────────────────────────────────────
-    sumaNotas:          get("suma_de_notas_de_agente"),                // NUMERICAL — total notas registradas
+    sumaNotas:          get("suma_de_notas_de_agente"),                // NUMERICAL — total notas
     historialNotas:     get("historial_de_notas_para_clientes"),       // LARGE_TEXT — historial completo
   };
 }
