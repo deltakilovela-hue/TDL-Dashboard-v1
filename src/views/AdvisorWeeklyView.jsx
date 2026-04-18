@@ -3,6 +3,21 @@ import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, 
 import { useData } from "../contexts/DataContext.jsx";
 import ContactModal from "../components/ContactModal.jsx";
 
+// ── Configuración de roles ────────────────────────────────────────────────────
+// Usuarios que NO son asesores de ventas (ocultar del dashboard)
+const EXCLUDED_USERS = new Set([
+  "Javier Vendedor",
+  "Jonathan vendedor vendedor",
+  "Robert Merca",
+]);
+
+// Usuarios con rol de administrador (muestran insignia especial)
+const ADMIN_USERS = new Set([
+  "Jonathan Delta Kilo",
+  "Fernanda Valdez",
+  "Nanncy Meza",
+]);
+
 // ── Suma stats de deep (históricas) para un asesor en el rango de fechas ──────
 function sumDeepStats(deepStats, advisorName, from, to) {
   const advisorData = deepStats?.dailyStats?.[advisorName];
@@ -557,15 +572,29 @@ function AdvisorCard({ advisor, idx, onSelectContact, appointments = [] }) {
 
         {/* Cabecera */}
         <div className="flex items-center gap-3">
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ring-1 ${avatarColor} text-base font-bold`}>
-            {initials(advisor.name)}
+          {/* Avatar con corona si es admin */}
+          <div className="relative shrink-0">
+            <div className={`flex h-11 w-11 items-center justify-center rounded-full ring-1 ${avatarColor} text-base font-bold`}>
+              {initials(advisor.name)}
+            </div>
+            {ADMIN_USERS.has(advisor.name) && (
+              <span className="absolute -top-1.5 -right-1.5 text-[13px]" title="Administrador">👑</span>
+            )}
           </div>
+
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-cream truncate">{advisor.name}</p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="font-semibold text-cream truncate">{advisor.name}</p>
+              {ADMIN_USERS.has(advisor.name) && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-gold-500/15 text-gold-400 border border-gold-500/30 rounded-full px-1.5 py-0.5 shrink-0">
+                  ✦ Admin
+                </span>
+              )}
+            </div>
             <p className="text-xs text-cream-dim">{advisor.contacts.length} contactos asignados</p>
           </div>
           <span className={[
-            "rounded-full px-2 py-0.5 text-[11px] font-medium ring-1",
+            "rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 shrink-0",
             activo
               ? "bg-success-400/10 text-success-400 ring-success-400/20"
               : "bg-dark-700 text-cream-dim ring-dark-600",
@@ -706,6 +735,7 @@ export default function AdvisorWeeklyView({ week }) {
       ...Object.keys(contactsMap),
     ]);
     namesSet.delete("(Sin asignar)");
+    EXCLUDED_USERS.forEach(name => namesSet.delete(name));
 
     return Array.from(namesSet)
       .map(name => {
