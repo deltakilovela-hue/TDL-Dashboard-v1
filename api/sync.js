@@ -188,27 +188,31 @@ function normalizeContact(c, userMap, oppMap, cfMap) {
     tags:         Array.isArray(c.tags) ? c.tags.join(", ") || "(No hay datos)" : (c.tags || "(No hay datos)"),
     pipelineName:  opp.pipeline || "(No hay datos)",
     pipelineStage: opp.stage    || "(No hay datos)",
-    // ── Encuesta Primer Contacto ───────────────────────────────────────────────
-    // IDs del campo GHL como primer argumento (lookup más confiable)
-    nivelInteres:    get("IVDOKjoJDMtoCcYqzlPH", "_nivel_de_interes_del_prospecto",      "nivel_de_interes_del_prospecto"),
-    presupuesto:     get("XPJiJOI5nVLNXzEXlrDp", "_presupuesto_estimado",                "presupuesto_estimado"),
-    financiamiento:  get("oLYtW2bv1h8HO11fyJ86", "_cuenta_con_financiamiento_o_credito", "cuenta_con_financiamiento_o_credito"),
-    deseaCita:       get("GhEmwRVvGcPSap7NnZsP", "_desea_agendar_una_cita",              "desea_agendar_una_cita"),
-    medioContacto:   get("D1bAtBu1yhE3aigqdLCj", "medio_de_contacto_de_preferencia"),
-    funciones:       get("w5UHR3yXRimaT1wTYpyb", "funciones_de_lead"),
-    // ── Encuesta Cierre Comercial ──────────────────────────────────────────────
-    sePresentoCita:  get("mXKBwOYrchFLnzyllrwf", "_el_prospecto_se_presento_a_la_cita"),
-    nivelInteresPost:get("x1bW12U6t73E4Xh9RiI2", "_nivel_de_interes_despues_de_la_cita"),
-    queFaltaCerrar:  get("H8SyacUea1rwdbx8JzEU", "_que_le_hace_falta_para_cerrar_la_operacion"),
-    requiereCloser:  get("mPBM192trmYBC5ZY0xxo", "_requiere_intervencion_de_un_closer_u_otro_equipo"),
-    fechaSeguimiento:get("TFPJmo94s7rXwhYmJNQb", "_fecha_tentativa_de_seguimientocierre"),
-    // ── Notas de actividad del asesor ──────────────────────────────────────────
+    // ── Encuesta Primer Contacto (10 campos) ─────────────────────────────────
+    // El ID es siempre el primer argumento → lookup más confiable que fieldKey
+    capturasPantalla:   get("CisBGAZP5eeeciBWuQ6H", "capturas_de_pantalla_seguimiento_externo"),
+    requieroMasTiempo:  get("gxdgjNTOijNFjiV3BY1U", "requiero_mas_tiempo_para_responder"),
+    medioContacto:      get("D1bAtBu1yhE3aigqdLCj", "medio_de_contacto_de_preferencia"),
+    nivelInteres:       get("IVDOKjoJDMtoCcYqzlPH", "_nivel_de_interes_del_prospecto",      "nivel_de_interes_del_prospecto"),
+    deseaCita:          get("GhEmwRVvGcPSap7NnZsP", "_desea_agendar_una_cita",              "desea_agendar_una_cita"),
+    presupuesto:        get("XPJiJOI5nVLNXzEXlrDp", "_presupuesto_estimado",                "presupuesto_estimado"),
+    financiamiento:     get("oLYtW2bv1h8HO11fyJ86", "_cuenta_con_financiamiento_o_credito", "cuenta_con_financiamiento_o_credito"),
     notaPrimerContacto: get("UaloobEyDQTsCu41WUnU", "comentario_de_nota_seguimiento_frio_"),
+    funciones:          get("w5UHR3yXRimaT1wTYpyb", "funciones_de_lead"),
     notaSeguimiento:    get("pJ7gXNsKRQaTz6DjICcz", "comentario_de_seguimiento_externo"),
+    // ── Encuesta Cierre Comercial (9 campos) ─────────────────────────────────
+    necesitaMasTiempo:  get("2W96VabNVt3fAX4f4kl7", "necesito_mas_tiempo_con_el_prospecto"),
+    descartado:         get("e50h3LU2xsG03FxQYAEN", "descartado_"),
+    sePresentoCita:     get("mXKBwOYrchFLnzyllrwf", "_el_prospecto_se_presento_a_la_cita"),
+    tipoCita:           get("Kfx8xOs1NC9hIuTXAFor", "_tipo_de_cita"),
+    nivelInteresPost:   get("x1bW12U6t73E4Xh9RiI2", "_nivel_de_interes_despues_de_la_cita"),
+    queFaltaCerrar:     get("H8SyacUea1rwdbx8JzEU", "_que_le_hace_falta_para_cerrar_la_operacion"),
+    requiereCloser:     get("mPBM192trmYBC5ZY0xxo", "_requiere_intervencion_de_un_closer_u_otro_equipo"),
+    fechaSeguimiento:   get("TFPJmo94s7rXwhYmJNQb", "_fecha_tentativa_de_seguimientocierre"),
     notaCierre:         get("KARIFTmgIzdlCPBYX0IL", "comentario_nota_cita_por_confirmar"),
-    // ── Historial y contador de notas ──────────────────────────────────────────
-    sumaNotas:          get("suma_de_notas_de_agente"),                // NUMERICAL — total notas
-    historialNotas:     get("historial_de_notas_para_clientes"),       // LARGE_TEXT — historial completo
+    // ── Historial y contador de notas ─────────────────────────────────────────
+    sumaNotas:          get("yxFLpVaQpgBtldW2fpet", "suma_de_notas_de_agente"),          // ID confirmado por debug
+    historialNotas:     get("JchVLh13uAo6SdV6hYRg", "historial_de_notas_para_clientes"), // ID confirmado por debug
   };
 }
 

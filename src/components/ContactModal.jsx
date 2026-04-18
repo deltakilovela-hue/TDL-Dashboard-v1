@@ -26,24 +26,31 @@ function formatDateShort(str) {
 function hasValue(v) { return v && v !== "(No hay datos)" && v !== "--"; }
 
 // ── Definición de encuestas con IDs de GHL ───────────────────────────────────
+// Encuesta de Primer Contacto — 10 campos
 const ENCUESTA_PC = [
-  { key: "medioContacto",   id: "D1bAtBu1yhE3aigqdLCj", label: "Medio de contacto",          type: "radio",   options: ["WhatsApp","Llamada","Email","Facebook","Instagram","Otro"] },
-  { key: "nivelInteres",    id: "IVDOKjoJDMtoCcYqzlPH", label: "Nivel de interés",            type: "radio",   options: ["Alto","Medio","Bajo","Sin interés"] },
-  { key: "deseaCita",       id: "GhEmwRVvGcPSap7NnZsP", label: "¿Desea agendar una cita?",    type: "radio",   options: ["Sí","No","Tal vez"] },
-  { key: "presupuesto",     id: "XPJiJOI5nVLNXzEXlrDp", label: "Presupuesto estimado",        type: "text"  },
-  { key: "financiamiento",  id: "oLYtW2bv1h8HO11fyJ86", label: "¿Cuenta con financiamiento?", type: "radio",   options: ["Sí","No","En proceso"] },
-  { key: "funciones",       id: "w5UHR3yXRimaT1wTYpyb", label: "Funciones de LEAD",           type: "text"  },
-  { key: "notaPrimerContacto", id: "UaloobEyDQTsCu41WUnU", label: "Nota primer contacto",     type: "textarea" },
-  { key: "notaSeguimiento", id: "pJ7gXNsKRQaTz6DjICcz", label: "Comentario seguimiento ext.", type: "textarea" },
+  { key: "capturasPantalla",  id: "CisBGAZP5eeeciBWuQ6H", label: "📷 Capturas de seguimiento",        type: "file"  },  // FILE_UPLOAD — solo lectura
+  { key: "requieroMasTiempo", id: "gxdgjNTOijNFjiV3BY1U", label: "Requiero más tiempo p/ responder",   type: "radio",   options: ["Sí","No"] },
+  { key: "medioContacto",     id: "D1bAtBu1yhE3aigqdLCj", label: "Medio de contacto",                  type: "radio",   options: ["WhatsApp","Llamada","Email","Facebook","Instagram","Otro"] },
+  { key: "nivelInteres",      id: "IVDOKjoJDMtoCcYqzlPH", label: "🌡️ Nivel de interés",               type: "radio",   options: ["Alto","Medio","Bajo","Sin interés"] },
+  { key: "deseaCita",         id: "GhEmwRVvGcPSap7NnZsP", label: "📆 ¿Desea agendar una cita?",       type: "radio",   options: ["Sí","No","Tal vez"] },
+  { key: "presupuesto",       id: "XPJiJOI5nVLNXzEXlrDp", label: "💸 Presupuesto estimado",           type: "text"  },
+  { key: "financiamiento",    id: "oLYtW2bv1h8HO11fyJ86", label: "🏦 ¿Cuenta con financiamiento?",    type: "radio",   options: ["Sí","No","En proceso"] },
+  { key: "notaPrimerContacto",id: "UaloobEyDQTsCu41WUnU", label: "Comentario NOTA primer contacto",    type: "textarea" },
+  { key: "funciones",         id: "w5UHR3yXRimaT1wTYpyb", label: "Funciones de LEAD",                 type: "text"  },
+  { key: "notaSeguimiento",   id: "pJ7gXNsKRQaTz6DjICcz", label: "Comentario de seguimiento externo",  type: "textarea" },
 ];
 
+// Encuesta de Cierre Comercial — 9 campos
 const ENCUESTA_CIERRE = [
-  { key: "sePresentoCita",  id: "mXKBwOYrchFLnzyllrwf", label: "¿El prospecto se presentó?",    type: "radio",   options: ["Sí","No","Reagendó"] },
-  { key: "nivelInteresPost",id: "x1bW12U6t73E4Xh9RiI2", label: "Nivel de interés post-cita",     type: "radio",   options: ["Alto","Medio","Bajo","Sin interés"] },
-  { key: "queFaltaCerrar",  id: "H8SyacUea1rwdbx8JzEU", label: "¿Qué falta para cerrar?",        type: "text"  },
-  { key: "requiereCloser",  id: "mPBM192trmYBC5ZY0xxo", label: "¿Requiere closer u otro equipo?",type: "radio",   options: ["Sí","No"] },
-  { key: "fechaSeguimiento",id: "TFPJmo94s7rXwhYmJNQb", label: "Fecha tentativa de cierre",       type: "date"  },
-  { key: "notaCierre",      id: "KARIFTmgIzdlCPBYX0IL", label: "Nota cierre comercial",           type: "textarea" },
+  { key: "necesitaMasTiempo", id: "2W96VabNVt3fAX4f4kl7", label: "Necesito más tiempo con el prospecto",  type: "radio",   options: ["Sí","No"] },
+  { key: "descartado",        id: "e50h3LU2xsG03FxQYAEN", label: "🗑️ Descartado",                          type: "radio",   options: ["Sí","No"] },
+  { key: "sePresentoCita",    id: "mXKBwOYrchFLnzyllrwf", label: "👥 ¿El prospecto se presentó?",          type: "radio",   options: ["Sí","No","Reprogramada","Reagendó"] },
+  { key: "tipoCita",          id: "Kfx8xOs1NC9hIuTXAFor", label: "📍 Tipo de cita",                        type: "radio",   options: ["Llamada","Presencial","Virtual","Online"] },
+  { key: "nivelInteresPost",  id: "x1bW12U6t73E4Xh9RiI2", label: "📊 Nivel de interés post-cita",          type: "radio",   options: ["Alto","Medio","Bajo","Sin interés"] },
+  { key: "queFaltaCerrar",    id: "H8SyacUea1rwdbx8JzEU", label: "📝 ¿Qué le hace falta para cerrar?",     type: "text"  },
+  { key: "requiereCloser",    id: "mPBM192trmYBC5ZY0xxo", label: "🔁 ¿Requiere closer u otro equipo?",     type: "radio",   options: ["Sí","No"] },
+  { key: "fechaSeguimiento",  id: "TFPJmo94s7rXwhYmJNQb", label: "🗓️ Fecha tentativa de cierre",           type: "date"  },
+  { key: "notaCierre",        id: "KARIFTmgIzdlCPBYX0IL", label: "Comentario NOTA Cierre comercial",       type: "textarea" },
 ];
 
 // ── Burbuja de mensaje ────────────────────────────────────────────────────────
@@ -185,7 +192,7 @@ function SurveySection({ title, emoji, fields, contact, onSave, saving }) {
           return (
             <div key={f.key} className="flex gap-3 px-4 py-2.5 items-start">
               <span className="text-xs text-zinc-500 w-40 shrink-0 pt-0.5">{f.label}</span>
-              {editing ? (
+              {editing && f.type !== "file" ? (
                 <div className="flex-1">
                   {f.type === "radio" ? (
                     <div className="flex flex-wrap gap-1.5">
@@ -225,6 +232,11 @@ function SurveySection({ title, emoji, fields, contact, onSave, saving }) {
                     />
                   )}
                 </div>
+              ) : f.type === "file" ? (
+                <span className={`text-xs flex-1 ${hasValue(val) ? "text-info-300" : "text-zinc-600"}`}>
+                  {hasValue(val) ? "✓ Archivo adjunto" : "—"}
+                  {editing && <span className="ml-2 text-zinc-600">(no editable aquí)</span>}
+                </span>
               ) : (
                 <span className={`text-xs flex-1 ${hasValue(val) ? "text-zinc-100" : "text-zinc-600"}`}>
                   {hasValue(val) ? val : "—"}
