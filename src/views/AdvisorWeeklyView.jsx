@@ -1047,21 +1047,8 @@ export default function AdvisorWeeklyView({ week }) {
 
     return Array.from(namesSet)
       .map(name => {
-        const deep = sumDeepStats(deepStats, name, week.from, week.to);
-        const live = activityMap[name] || { mensajesEnviados: 0, mensajesPendientes: 0, llamadas: 0, llamadasSalientes: 0 };
-        // mensajesEnviados: SIEMPRE del conteo en vivo filtrado (excluye bots/automáticos).
-        // Los deep stats cuentan TODOS los mensajes salientes incluidos los de bots,
-        // por lo que no son útiles para este campo.
-        // llamadas: deep stats son más precisos (no hay llamadas automatizadas).
-        const act = {
-          ...live,
-          // mensajesEnviados: usar el mayor entre conversaciones y contactos activos.
-          // contactosActivosCount (dateUpdated) es el más confiable; convs es fallback.
-          mensajesEnviados:    Math.max(live.mensajesEnviados, contactosActivosCount),
-          llamadas:            deep ? deep.llamadas            : live.llamadas,
-          llamadasSalientes:   deep ? deep.llamadasSalientes   : live.llamadasSalientes,
-          llamadasContestadas: deep ? deep.llamadasContestadas : (live.llamadasContestadas || 0),
-        };
+        const deep        = sumDeepStats(deepStats, name, week.from, week.to);
+        const live        = activityMap[name] || { mensajesEnviados: 0, mensajesPendientes: 0, llamadas: 0, llamadasSalientes: 0 };
         const contactList = contactsMap[name] || [];
 
         // ── Contactos con actividad esta semana (via dateUpdated) ──────────────
@@ -1073,6 +1060,16 @@ export default function AdvisorWeeklyView({ week }) {
           const d = new Date(c.dateUpdated);
           return !isNaN(d) && d >= week.from && d <= week.to;
         }).length;
+
+        // mensajesEnviados: máximo entre convs activas y contactos con dateUpdated esta semana.
+        // llamadas: deep stats son más precisos (no hay llamadas automatizadas).
+        const act = {
+          ...live,
+          mensajesEnviados:    Math.max(live.mensajesEnviados, contactosActivosCount),
+          llamadas:            deep ? deep.llamadas            : live.llamadas,
+          llamadasSalientes:   deep ? deep.llamadasSalientes   : live.llamadasSalientes,
+          llamadasContestadas: deep ? deep.llamadasContestadas : (live.llamadasContestadas || 0),
+        };
 
         // Contar notas llenadas (campos de actividad) en los contactos de este asesor
         const notasLlenadas = contactList.reduce((sum, c) => sum + noteScore(c), 0);
