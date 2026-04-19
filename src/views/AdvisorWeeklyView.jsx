@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp, FileText, Calendar, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
+import { MessageSquare, Phone, Inbox, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp, FileText, Calendar, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import ContactModal from "../components/ContactModal.jsx";
 
@@ -671,26 +671,15 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  const isCalls    = type === "calls";
-  const Icon       = isCalls ? Phone : MessageSquare;
-  const title      = isCalls ? "Llamadas" : "Mensajes enviados";
-
-  // Contactos cruzados con conversaciones (preciso, requiere sync actualizado)
+  const isCalls         = type === "calls";
+  const Icon            = isCalls ? Phone : MessageSquare;
+  const title           = isCalls ? "Llamadas" : "Mensajes enviados";
   const crossedContacts = isCalls ? advisor.calledContacts : advisor.messagedContacts;
-
-  // Fallback: si el cruce da vacío, mostrar todos los contactos del asesor
-  // ordenados por actividad reciente. Esto ocurre cuando el cache es antiguo.
-  const useFallback = crossedContacts.length === 0;
-  const contacts = useFallback
-    ? advisor.contacts
-        .filter(c => c.dateUpdated && c.dateUpdated !== "(No hay datos)")
-        .sort((a, b) => new Date(b.dateUpdated) - new Date(a.dateUpdated))
-        .map(c => ({ contact: c, body: null, date: c.dateUpdated }))
-    : crossedContacts;
-
-  const countLabel = useFallback
-    ? `${contacts.length} contacto(s) asignados · ${isCalls ? advisor.llamadas : advisor.mensajesEnviados} ${isCalls ? "llamada(s)" : "mensaje(s)"} esta semana`
-    : `${contacts.length} contacto(s) · ${isCalls ? advisor.llamadas : advisor.mensajesEnviados} ${isCalls ? "llamada(s)" : "mensaje(s)"} esta semana`;
+  // Si el cruce conv↔contacto está vacío, usar fallback filtrado por semana (ya pre-computado)
+  const useFallback     = crossedContacts.length === 0;
+  const contacts        = useFallback ? (advisor.weekContacts || []) : crossedContacts;
+  const actCount        = isCalls ? advisor.llamadas : advisor.mensajesEnviados;
+  const countLabel      = `${contacts.length} contacto(s) · ${actCount} ${isCalls ? "llamada(s)" : "mensaje(s)"} esta semana`;
 
   return (
     <div
@@ -726,9 +715,8 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
             <p className="text-center text-sm text-cream-dim py-10">Sin contactos asignados</p>
           ) : (
             contacts.map(({ contact: c, body, date }) => {
-              const nombre = `${c.firstName || ""} ${c.lastName || ""}`.trim() || "(Sin nombre)";
-              const initials2 = (nombre.split(" ").map(w => w[0]).join("").toUpperCase() || "?").slice(0, 2);
-              const dateStr = date ? new Date(typeof date === "number" ? date : date).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : null;
+              const nombre  = `${c.firstName || ""} ${c.lastName || ""}`.trim() || "(Sin nombre)";
+              const dateStr = date ? new Date(date).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : null;
               return (
                 <button
                   key={c.id}
@@ -737,7 +725,7 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
                 >
                   {/* Iniciales */}
                   <div className="shrink-0 h-9 w-9 rounded-full bg-dark-700 flex items-center justify-center text-[11px] font-bold text-cream-dim mt-0.5">
-                    {initials2}
+                    {initials(nombre)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">
@@ -998,8 +986,9 @@ export default function AdvisorWeeklyView({ week }) {
         // Prioridad: datos históricos del job nocturno (precisos) > datos en tiempo real (aproximados)
         const deep = sumDeepStats(deepStats, name, week.from, week.to);
         const live = activityMap[name] || { mensajesEnviados: 0, mensajesPendientes: 0, llamadas: 0, llamadasSalientes: 0 };
+        // deep stats tienen conteos precisos de actividad; mensajesPendientes viene siempre del live
         const act  = deep
-          ? { ...live, mensajesEnviados: deep.mensajesEnviados, llamadas: deep.llamadas, llamadasSalientes: deep.llamadasSalientes, llamadasContestadas: deep.llamadasContestadas }
+          ? { ...live, mensajesEnviados: deep.mensajesEnviados, llamadas: deep.llamadas, llamadasSalientes: deep.llamadasSalientes, llamadasContestadas: deep.llamadasContestadas, mensajesPendientes: live.mensajesPendientes }
           : live;
         const contactList = contactsMap[name] || [];
         // Contar notas llenadas (campos de actividad) en los contactos de este asesor
@@ -1009,8 +998,7 @@ export default function AdvisorWeeklyView({ week }) {
           const v = Number(c.sumaNotas);
           return sum + (isNaN(v) ? 0 : v);
         }, 0);
-        // Contactos con actividad esta semana — mapas separados por tipo
-        // para no perder mensajes cuando el conv más reciente es una llamada y viceversa
+        // Contactos con actividad esta semana — mapas separados para no mezclar llamadas con mensajes
         const calledContacts   = contactList
           .map(c => ({ contact: c, conv: weekCallByContact.get(c.id) }))
           .filter(({ conv }) => conv)
@@ -1021,7 +1009,17 @@ export default function AdvisorWeeklyView({ week }) {
           .filter(({ conv }) => conv)
           .map(({ contact, conv }) => ({ contact, body: conv.lastMessageBody, date: conv.lastMessageDate }))
           .sort((a, b) => new Date(b.date) - new Date(a.date));
-        return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep, calledContacts, messagedContacts };
+        // Fallback filtrado: contactos del asesor con dateUpdated DENTRO de esta semana
+        // Se usa cuando el cruce por conv está vacío (cache desactualizado o datos incompletos)
+        const weekContacts = contactList
+          .filter(c => {
+            if (!c.dateUpdated || c.dateUpdated === "(No hay datos)") return false;
+            const d = new Date(c.dateUpdated);
+            return !isNaN(d) && d >= week.from && d <= week.to;
+          })
+          .sort((a, b) => new Date(b.dateUpdated) - new Date(a.dateUpdated))
+          .map(c => ({ contact: c, body: null, date: c.dateUpdated }));
+        return { name, contacts: contactList, ...act, notasLlenadas, sumaNotas, hasDeepData: !!deep, calledContacts, messagedContacts, weekContacts };
       })
       .sort((a, b) => {
         // Score compuesto: mensajes + llamadas×2 + notas×1.5 + notas_llenadas×3

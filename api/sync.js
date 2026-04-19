@@ -139,12 +139,6 @@ async function fetchOpportunityMap(locationId) {
 }
 
 // ── Conversaciones paginadas (máx 1000 para stats semanales) ─────────────────
-function isCallConv(c) {
-  const t = String(c.type || "").toLowerCase();
-  const ch = String(c.lastMessageChannel || c.lastMessageType || "").toLowerCase();
-  return t === "type_phone" || t === "phone" || t === "call" || ch === "call" || ch === "phone_call" || ch.includes("call") || ch.includes("phone");
-}
-
 async function fetchConversations(locationId) {
   const all = []; let cursor = null;
   for (let p = 0; p < 10; p++) {
@@ -190,28 +184,26 @@ async function fetchCustomFieldsForContacts(contactIds) {
 }
 
 // ── Normalizar contacto ───────────────────────────────────────────────────────
-function normalizeContact(c, userMap, oppMap, cfMap, enrichMap = {}) {
-  const custom = {};
-
-  // Primero procesar datos bulk (a veces vienen vacíos en customField)
-  (c.customField || c.customFields || []).forEach(f => {
-    const val = f.value ?? "";
-    if (!val) return; // saltar entradas vacías
-    if (f.id) custom[f.id] = val;
-    if (f.fieldKey) { custom[f.fieldKey] = val; custom[f.fieldKey.replace(/^contact\./, "")] = val; }
-    const dn = (f.id && cfMap[f.id]) || (f.fieldKey && cfMap[f.fieldKey]) || (f.fieldKey && cfMap[f.fieldKey.replace(/^contact\./, "")]) || "";
-    if (dn) custom[dn] = val;
-  });
-
-  // Luego sobreescribir con datos del GET individual (más confiable)
-  (enrichMap[c.id] || []).forEach(f => {
+// Helper: aplica una lista de campos personalizados al objeto custom
+function applyCustomFields(fields, cfMap, custom) {
+  fields.forEach(f => {
     const val = f.value ?? "";
     if (!val) return;
     if (f.id) custom[f.id] = val;
-    if (f.fieldKey) { custom[f.fieldKey] = val; custom[f.fieldKey.replace(/^contact\./, "")] = val; }
+    if (f.fieldKey) {
+      custom[f.fieldKey] = val;
+      custom[f.fieldKey.replace(/^contact\./, "")] = val;
+    }
     const dn = (f.id && cfMap[f.id]) || (f.fieldKey && cfMap[f.fieldKey]) || (f.fieldKey && cfMap[f.fieldKey.replace(/^contact\./, "")]) || "";
     if (dn) custom[dn] = val;
   });
+}
+
+function normalizeContact(c, userMap, oppMap, cfMap, enrichMap = {}) {
+  const custom = {};
+  // Primero datos bulk (a veces vienen vacíos), luego GET individual (más confiable)
+  applyCustomFields(c.customField || c.customFields || [], cfMap, custom);
+  applyCustomFields(enrichMap[c.id] || [], cfMap, custom);
   const opp = oppMap[c.id] || {};
   const get = (...keys) => { for (const k of keys) { const v = custom[k]; if (v && v !== "") return v; } return "(No hay datos)"; };
   return {
