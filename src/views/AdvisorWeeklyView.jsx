@@ -1017,7 +1017,10 @@ export default function AdvisorWeeklyView({ week }) {
             weekCallByContact.set(c.contactId, c);
         }
       } else {
-        if (isOutbound(c.lastMessageDirection)) activityMap[name].mensajesEnviados++;
+        // Contar cualquier conversación de mensaje activa esta semana.
+        // GHL no devuelve lastMessageDirection confiable para WhatsApp/SMS,
+        // así que usamos la presencia en weekConvs como proxy de actividad.
+        activityMap[name].mensajesEnviados++;
         activityMap[name].mensajesPendientes += Number(c.unreadCount) || 0;
         if (c.contactId) {
           const prev = weekMessageByContact.get(c.contactId);
