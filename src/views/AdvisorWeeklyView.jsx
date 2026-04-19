@@ -379,6 +379,10 @@ const AUTO_PATTERNS = [
   /una persona est[aá] preguntando por wayak/i,
   /su nombre es\s+\w+\s*\.?\s*$/i,
   /¿en que te gustar[ií]a invertir\?/i,
+
+  // ── Notificación de recorrido completado (Wayak) ──────────────────────────────
+  /complet[oó] el recorrido por el sistema para wayak/i,
+  /ahora puedes contactarlo desde la aplicaci[oó]n/i,
 ];
 
 function isAutoMessage(text) {
