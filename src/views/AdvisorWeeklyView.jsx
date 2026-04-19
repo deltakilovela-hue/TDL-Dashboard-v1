@@ -334,6 +334,16 @@ const AUTO_PATTERNS = [
   // ── Mensajes de sistema GHL ──────────────────────────────────────────────────
   /^opportunity status changed$/i,
   /^opportunity updated$/i,
+  /^opportunity created$/i,
+  /^opportunity deleted$/i,
+  /^contact updated$/i,
+  /^appointment scheduled$/i,
+  /^appointment cancelled$/i,
+
+  // ── Flujos de re-engagement automáticos ─────────────────────────────────────
+  /veo que no pudiste asistir a la cita/i,
+  /te gustar[ií]a re-?agendar/i,
+  /perdiste tu cita/i,
 
   // ── Renders / imágenes automáticas (Wayak, Oasis Ananta, etc.) ──────────────
   /wayak\s*\|.*render ilustrativo/i,
