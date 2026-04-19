@@ -331,27 +331,29 @@ function noteScore(contact) {
 // Excluye mensajes de sistema, NancyBot y secuencias de nutrición automatizada.
 // Agrega más patrones aquí cuando sea necesario.
 const AUTO_PATTERNS = [
-  // Mensajes de sistema GHL
+  // ── Mensajes de sistema GHL ──────────────────────────────────────────────────
   /^opportunity status changed$/i,
   /^opportunity updated$/i,
 
-  // Indicadores de NancyBot (nombre + cargo)
+  // ── Renders / imágenes automáticas (Wayak, Oasis Ananta, etc.) ──────────────
+  /wayak\s*\|.*render ilustrativo/i,
+  /\(render ilustrativo\)/i,          // cubre cualquier render futuro
+  /vista posterior de oasis/i,
+
+  // ── NancyBot — nombre y cargo ────────────────────────────────────────────────
   /soy\s+\*?nancy\*?/i,
   /coordinadora comercial/i,
+  /coordinadora comercial de \*?taller del ladrillo\*?/i,
 
-  // Presentación de desarrollo + marca (típico de bot)
-  /vista posterior de oasis/i,
+  // ── NancyBot — plantillas de presentación ───────────────────────────────────
   /estoy aquí para cuando quieras seguir con la información/i,
   /te presento a \*?.+\*?\s+tu asesor/i,
+  /(?:oasis ananta|taller del ladrillo).*(?:frente al mar|preventa|mazatl[aá]n)/i,
 
-  // Secuencias de nutrición automatizada
+  // ── Secuencias de nutrición automatizada ────────────────────────────────────
   /recientemente te contact[eé] referente/i,
   /sigo sin poder conversar contigo referente/i,
   /para enviarte\s*(la información|opciones|los detalles)/i,
-
-  // Firma / plantillas de Taller del Ladrillo con bot
-  /coordinadora comercial de \*?taller del ladrillo\*?/i,
-  /(?:oasis ananta|taller del ladrillo).*(?:frente al mar|preventa|mazatl[aá]n)/i,
 ];
 
 function isAutoMessage(text) {
@@ -1020,13 +1022,18 @@ export default function AdvisorWeeklyView({ week }) {
 
     return Array.from(namesSet)
       .map(name => {
-        // Prioridad: datos históricos del job nocturno (precisos) > datos en tiempo real (aproximados)
         const deep = sumDeepStats(deepStats, name, week.from, week.to);
         const live = activityMap[name] || { mensajesEnviados: 0, mensajesPendientes: 0, llamadas: 0, llamadasSalientes: 0 };
-        // deep stats tienen conteos precisos de actividad; mensajesPendientes viene siempre del live
-        const act  = deep
-          ? { ...live, mensajesEnviados: deep.mensajesEnviados, llamadas: deep.llamadas, llamadasSalientes: deep.llamadasSalientes, llamadasContestadas: deep.llamadasContestadas, mensajesPendientes: live.mensajesPendientes }
-          : live;
+        // mensajesEnviados: SIEMPRE del conteo en vivo filtrado (excluye bots/automáticos).
+        // Los deep stats cuentan TODOS los mensajes salientes incluidos los de bots,
+        // por lo que no son útiles para este campo.
+        // llamadas: deep stats son más precisos (no hay llamadas automatizadas).
+        const act = {
+          ...live,
+          llamadas:          deep ? deep.llamadas          : live.llamadas,
+          llamadasSalientes: deep ? deep.llamadasSalientes : live.llamadasSalientes,
+          llamadasContestadas: deep ? deep.llamadasContestadas : (live.llamadasContestadas || 0),
+        };
         const contactList = contactsMap[name] || [];
         // Contar notas llenadas (campos de actividad) en los contactos de este asesor
         const notasLlenadas = contactList.reduce((sum, c) => sum + noteScore(c), 0);
