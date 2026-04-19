@@ -327,6 +327,39 @@ function noteScore(contact) {
   return NOTE_FIELDS.filter(f => hasValue(contact[f.key])).length;
 }
 
+// ── Filtro de mensajes automáticos / bots ────────────────────────────────────
+// Excluye mensajes de sistema, NancyBot y secuencias de nutrición automatizada.
+// Agrega más patrones aquí cuando sea necesario.
+const AUTO_PATTERNS = [
+  // Mensajes de sistema GHL
+  /^opportunity status changed$/i,
+  /^opportunity updated$/i,
+
+  // Indicadores de NancyBot (nombre + cargo)
+  /soy\s+\*?nancy\*?/i,
+  /coordinadora comercial/i,
+
+  // Presentación de desarrollo + marca (típico de bot)
+  /vista posterior de oasis/i,
+  /estoy aquí para cuando quieras seguir con la información/i,
+  /te presento a \*?.+\*?\s+tu asesor/i,
+
+  // Secuencias de nutrición automatizada
+  /recientemente te contact[eé] referente/i,
+  /sigo sin poder conversar contigo referente/i,
+  /para enviarte\s*(la información|opciones|los detalles)/i,
+
+  // Firma / plantillas de Taller del Ladrillo con bot
+  /coordinadora comercial de \*?taller del ladrillo\*?/i,
+  /(?:oasis ananta|taller del ladrillo).*(?:frente al mar|preventa|mazatl[aá]n)/i,
+];
+
+function isAutoMessage(text) {
+  if (!text || !text.trim()) return false;
+  const t = text.trim();
+  return AUTO_PATTERNS.some(p => p.test(t));
+}
+
 // ── GHL lastMessageDirection puede ser string o número ────────────────────────
 function isOutbound(dir) {
   if (dir === null || dir === undefined) return false;
@@ -922,11 +955,15 @@ export default function AdvisorWeeklyView({ week }) {
 
     // Conversaciones con actividad esta semana
     // lastMessageDate puede ser Unix ms (number) o ISO string
+    // Se excluyen conversaciones cuyo último mensaje es automático (bot/sistema)
     const weekConvs = conversations.filter(c => {
       const raw = c.lastMessageDate;
       if (!raw) return false;
       const d = typeof raw === "number" ? new Date(raw) : new Date(raw);
-      return !isNaN(d) && d >= week.from && d <= week.to;
+      if (isNaN(d) || d < week.from || d > week.to) return false;
+      // Excluir si el último mensaje fue de un bot / automatización
+      if (!c.isCall && isAutoMessage(c.lastMessageBody)) return false;
+      return true;
     });
 
     // Acumular stats por asesor
