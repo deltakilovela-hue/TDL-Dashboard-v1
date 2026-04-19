@@ -383,6 +383,29 @@ const AUTO_PATTERNS = [
   // ── Notificación de recorrido completado (Wayak) ──────────────────────────────
   /complet[oó] el recorrido por el sistema para wayak/i,
   /ahora puedes contactarlo desde la aplicaci[oó]n/i,
+
+  // ── Notificaciones genéricas de lead/sistema ──────────────────────────────────
+  /el lead\s+\w.*complet[oó]/i,
+  /nuevo lead\s+(registrado|asignado|recibido)/i,
+  /lead\s+asignado\s+a/i,
+  /se\s+ha\s+asignado\s+(un\s+)?lead/i,
+  /formulario\s+de\s+(facebook|instagram|google|web)/i,
+  /llen[oó]\s+el\s+formulario/i,
+
+  // ── Seguimiento automático de citas ──────────────────────────────────────────
+  /tu\s+cita\s+(ha\s+sido\s+)?(confirmada|cancelada|reagendada|programada)/i,
+  /recordatorio\s+de\s+(tu\s+)?cita/i,
+  /tienes\s+una\s+cita\s+(programada|confirmada)/i,
+  /te\s+esperamos\s+(el|mañana|hoy)\s+en\s+(tu\s+)?cita/i,
+
+  // ── Mensajes de bienvenida automatizados ─────────────────────────────────────
+  /gracias\s+por\s+(tu\s+)?(inter[eé]s|contacto|mensaje)\s+en\s+(?:oasis|ananta|taller del ladrillo|wayak)/i,
+  /bienvenido.*(?:oasis|ananta|taller del ladrillo|wayak)/i,
+  /hola.*recib[íi](?:mos|)\s+tu\s+(solicitud|mensaje|formulario|información)/i,
+
+  // ── Mensajes de seguimiento de pipeline ──────────────────────────────────────
+  /pipeline\s+stage\s+changed/i,
+  /etapa\s+cambiada?\s+a/i,
 ];
 
 function isAutoMessage(text) {
