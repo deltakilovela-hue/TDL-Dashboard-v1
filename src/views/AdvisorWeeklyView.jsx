@@ -969,17 +969,16 @@ export default function AdvisorWeeklyView({ week }) {
     const conversations = data.conversations ?? [];
     const usuarios      = data.usuarios      ?? [];
 
-    // Conversaciones con actividad esta semana
-    // lastMessageDate puede ser Unix ms (number) o ISO string
-    // Se excluyen conversaciones cuyo último mensaje es automático (bot/sistema)
+    // Conversaciones con actividad esta semana (solo filtro de fecha).
+    // NO filtramos por lastMessageBody aquí: GHL a veces devuelve
+    // "Opportunity created" como lastMessageBody aunque el asesor enviara
+    // un mensaje real antes, lo que causaría que se excluyera toda la conv.
+    // El filtro de auto-mensajes se aplica SOLO al mostrar el preview en el modal.
     const weekConvs = conversations.filter(c => {
       const raw = c.lastMessageDate;
       if (!raw) return false;
       const d = typeof raw === "number" ? new Date(raw) : new Date(raw);
-      if (isNaN(d) || d < week.from || d > week.to) return false;
-      // Excluir si el último mensaje fue de un bot / automatización
-      if (!c.isCall && isAutoMessage(c.lastMessageBody)) return false;
-      return true;
+      return !isNaN(d) && d >= week.from && d <= week.to;
     });
 
     // Lookup global id → contacto (necesario antes del forEach para fallback de asignación)
@@ -1077,7 +1076,12 @@ export default function AdvisorWeeklyView({ week }) {
         const messagedContacts = contactList
           .map(c => ({ contact: c, conv: weekMessageByContact.get(c.id) }))
           .filter(({ conv }) => conv)
-          .map(({ contact, conv }) => ({ contact, body: conv.lastMessageBody, date: conv.lastMessageDate }))
+          .map(({ contact, conv }) => ({
+            contact,
+            // Si el último cuerpo es un mensaje de bot, no mostrar el preview
+            body: conv.lastMessageBody && !isAutoMessage(conv.lastMessageBody) ? conv.lastMessageBody : null,
+            date: conv.lastMessageDate,
+          }))
           .sort((a, b) => new Date(b.date) - new Date(a.date));
         // Fallback filtrado: contactos del asesor con dateUpdated DENTRO de esta semana
         // Se usa cuando el cruce por conv está vacío (cache desactualizado o datos incompletos)
