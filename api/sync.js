@@ -297,14 +297,24 @@ export default async function handler(req, res) {
       const channelType = String(c.type || "").toLowerCase();
       // GHL conversation types: type_phone/phone = llamada. "6" = WhatsApp (NO es llamada).
       const isCall = channelType === "type_phone" || channelType === "phone" || channelType === "call";
+
+      // GHL NO devuelve lastMessageDirection en conversaciones de WhatsApp/SMS.
+      // Fallback: si hay mensajes sin leer → el último fue del cliente (inbound).
+      //           si unreadCount === 0    → el asesor respondió (outbound).
+      const rawDir    = c.lastMessageDirection ?? c.direction ?? c.lastMessage?.direction;
+      const unread    = Number(c.unreadCount) || 0;
+      const direction = rawDir != null
+        ? String(rawDir)
+        : (unread > 0 ? "inbound" : "outbound");
+
       return {
         id:                   c.id,
         contactId:            c.contactId,
         assignedToName:       c.assignedTo ? (userMap[c.assignedTo] || "(Sin asignar)") : "(Sin asignar)",
         lastMessageDate:      c.lastMessageDate || c.dateUpdated || null,
-        lastMessageDirection: c.lastMessageDirection || null,
+        lastMessageDirection: direction,
         lastMessageBody:      c.lastMessageBody ? String(c.lastMessageBody).substring(0, 300) : null,
-        unreadCount:          Number(c.unreadCount) || 0,
+        unreadCount:          unread,
         isCall,
         channelType,
       };
