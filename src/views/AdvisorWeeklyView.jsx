@@ -972,6 +972,10 @@ export default function AdvisorWeeklyView({ week }) {
       return true;
     });
 
+    // Lookup global id → contacto (necesario antes del forEach para fallback de asignación)
+    const contactsById = {};
+    contacts.forEach(c => { if (c.id) contactsById[c.id] = c; });
+
     // Acumular stats por asesor
     // IMPORTANTE: c.isCall viene ya calculado en sync.js — no recalcular aquí
     const activityMap  = {};
@@ -980,7 +984,16 @@ export default function AdvisorWeeklyView({ week }) {
     const weekCallByContact    = new Map(); // contactId → conv más reciente tipo llamada
     const weekMessageByContact = new Map(); // contactId → conv más reciente tipo mensaje
     weekConvs.forEach(c => {
-      const name = c.assignedToName || "(Sin asignar)";
+      // En GHL, la conversación puede no tener assignedTo propio.
+      // Fallback: usar el asesor asignado al contacto correspondiente.
+      let name = c.assignedToName && c.assignedToName !== "(Sin asignar)"
+        ? c.assignedToName
+        : null;
+      if (!name && c.contactId) {
+        const ct = contactsById[c.contactId];
+        if (ct && ct.assignedTo && ct.assignedTo !== "(No hay datos)") name = ct.assignedTo;
+      }
+      name = name || "(Sin asignar)";
       if (!activityMap[name]) activityMap[name] = {
         mensajesEnviados: 0, mensajesPendientes: 0,
         llamadas: 0, llamadasSalientes: 0,
@@ -1003,10 +1016,6 @@ export default function AdvisorWeeklyView({ week }) {
         }
       }
     });
-
-    // Lookup global id → contacto (para modales de llamadas/mensajes)
-    const contactsById = {};
-    contacts.forEach(c => { if (c.id) contactsById[c.id] = c; });
 
     // Contactos por asesor
     const contactsMap = {};
