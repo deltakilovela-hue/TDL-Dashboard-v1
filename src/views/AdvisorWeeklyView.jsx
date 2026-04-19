@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { MessageSquare, Phone, Inbox, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp, FileText, Calendar, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
+import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp, FileText, Calendar, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import ContactModal from "../components/ContactModal.jsx";
 
