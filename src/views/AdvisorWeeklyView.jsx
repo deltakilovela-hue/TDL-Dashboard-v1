@@ -1055,11 +1055,25 @@ export default function AdvisorWeeklyView({ week }) {
         // llamadas: deep stats son más precisos (no hay llamadas automatizadas).
         const act = {
           ...live,
-          llamadas:          deep ? deep.llamadas          : live.llamadas,
-          llamadasSalientes: deep ? deep.llamadasSalientes : live.llamadasSalientes,
+          // mensajesEnviados: usar el mayor entre conversaciones y contactos activos.
+          // contactosActivosCount (dateUpdated) es el más confiable; convs es fallback.
+          mensajesEnviados:    Math.max(live.mensajesEnviados, contactosActivosCount),
+          llamadas:            deep ? deep.llamadas            : live.llamadas,
+          llamadasSalientes:   deep ? deep.llamadasSalientes   : live.llamadasSalientes,
           llamadasContestadas: deep ? deep.llamadasContestadas : (live.llamadasContestadas || 0),
         };
         const contactList = contactsMap[name] || [];
+
+        // ── Contactos con actividad esta semana (via dateUpdated) ──────────────
+        // dateUpdated se actualiza en GHL con cualquier interacción: mensaje,
+        // nota, cambio de campo, etc. Es mucho más confiable que el conteo
+        // por conversaciones, que depende de campos que GHL no devuelve bien.
+        const contactosActivosCount = contactList.filter(c => {
+          if (!c.dateUpdated || c.dateUpdated === "(No hay datos)") return false;
+          const d = new Date(c.dateUpdated);
+          return !isNaN(d) && d >= week.from && d <= week.to;
+        }).length;
+
         // Contar notas llenadas (campos de actividad) en los contactos de este asesor
         const notasLlenadas = contactList.reduce((sum, c) => sum + noteScore(c), 0);
         // Sumar el campo numérico "Suma de notas de agente" de cada contacto
