@@ -354,6 +354,10 @@ const AUTO_PATTERNS = [
   /recientemente te contact[eé] referente/i,
   /sigo sin poder conversar contigo referente/i,
   /para enviarte\s*(la información|opciones|los detalles)/i,
+
+  // ── Saludos/presentaciones de bot con frases fijas ───────────────────────────
+  /hola,?\s+vi que te interesaste en/i,
+  /quedo\s+(al pendiente|a tus órdenes|a la orden)\s+para\s+cualquier\s+duda/i,
 ];
 
 function isAutoMessage(text) {
@@ -740,7 +744,7 @@ function AdvisorActivityModal({ advisor, type, onClose, onSelectContact }) {
         {/* Aviso fallback */}
         {useFallback && contacts.length > 0 && (
           <div className="px-4 py-2 bg-gold-500/10 border-b border-gold-500/20 shrink-0">
-            <p className="text-[11px] text-gold-400">⚠ Sincroniza para ver solo los contactos de esta semana. Mostrando todos los contactos asignados.</p>
+            <p className="text-[11px] text-gold-400">⚠ Sin datos de conversación. Mostrando contactos con actividad en la semana (por fecha de actualización).</p>
           </div>
         )}
 
