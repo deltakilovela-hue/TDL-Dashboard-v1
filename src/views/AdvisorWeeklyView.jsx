@@ -368,6 +368,17 @@ const AUTO_PATTERNS = [
   // ── Saludos/presentaciones de bot con frases fijas ───────────────────────────
   /hola,?\s+vi que te interesaste en/i,
   /quedo\s+(al pendiente|a tus órdenes|a la orden)\s+para\s+cualquier\s+duda/i,
+
+  // ── Notificaciones de asignación de lead ─────────────────────────────────────
+  /se asign[oó] el lead/i,
+  /al agente:\s*.+/i,
+
+  // ── Notificaciones de formulario Facebook / Wayak ────────────────────────────
+  /un lead acaba de llenar el formulario de facebook de wayak/i,
+  /para informarte que:/i,
+  /una persona est[aá] preguntando por wayak/i,
+  /su nombre es\s+\w+\s*\.?\s*$/i,
+  /¿en que te gustar[ií]a invertir\?/i,
 ];
 
 function isAutoMessage(text) {
