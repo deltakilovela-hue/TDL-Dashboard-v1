@@ -17,6 +17,8 @@
  *   UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
  */
 
+import { isAutoMessage, isSystemActivityType } from "../shared/autoMessagePatterns.js";
+
 const GHL_BASE       = "https://services.leadconnectorhq.com";
 const GHL_VERSION    = "2021-07-28";
 const DEEP_CACHE_KEY = "tdl:ghl:deep:v1";
@@ -144,12 +146,18 @@ async function fetchMessages(convId) {
 const cutoff = new Date(Date.now() - DAYS_BACK * 86_400_000);
 
 // ── Clasificar un mensaje ─────────────────────────────────────────────────────
+// "mensaje enviado" solo cuenta si hay un asesor humano detrás:
+//   - excluye logs de sistema (TYPE_ACTIVITY_*: "Opportunity updated", etc.)
+//   - excluye mensajes sin userId (automatización pura, sin asesor asociado)
+//   - excluye plantillas de bot conocidas (NancyBot, Wayak, etc. — mismo filtro
+//     que usa el dashboard en vivo, aunque vengan firmadas con el userId del asesor)
 function classifyMessage(msg) {
   const type = String(msg.messageType || msg.type || "").toUpperCase();
   const dir  = String(msg.direction || msg.messageDirection || "").toLowerCase();
   const date = msg.dateAdded ? new Date(msg.dateAdded) : null;
 
   if (!date || date < cutoff) return null;
+  if (isSystemActivityType(type)) return null; // no es comunicación real
 
   const dayKey = date.toISOString().split("T")[0]; // "YYYY-MM-DD"
   const isCall = type === "TYPE_CALL" || type === "CALL" || type === "10";
@@ -162,7 +170,9 @@ function classifyMessage(msg) {
     return { dayKey, kind: "call", isOutbound, answered, missed };
   } else {
     const isOutbound = dir === "outbound" || dir === "1";
-    if (!isOutbound) return null; // solo contamos mensajes enviados
+    if (!isOutbound) return null;       // solo contamos mensajes enviados
+    if (!msg.userId) return null;       // sin asesor asociado → automatización pura
+    if (isAutoMessage(msg.body)) return null; // plantilla de bot conocida
     return { dayKey, kind: "message" };
   }
 }
