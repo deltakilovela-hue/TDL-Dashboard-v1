@@ -1,93 +1,65 @@
 # TDL Dashboard — Taller del Ladrillo
 
-Dashboard comercial para análisis de agentes. Carga archivos CSV y genera métricas, ranking y análisis por agente en tiempo real.
+Dashboard comercial para análisis de actividad por asesor, alimentado en vivo desde GoHighLevel (GHL).
 
 ---
 
-## 🚀 Cómo subir a Vercel (paso a paso)
+## 🔌 Cómo funciona la conexión de datos
 
-### Opción A — Desde GitHub (recomendado)
+Este dashboard **no usa carga manual de CSV** como fuente principal — se conecta directo a la API de GHL:
 
-**Paso 1: Instalar dependencias y verificar que funciona**
+| Fuente | Qué trae | Cuándo corre |
+|---|---|---|
+| `/api/sync` (Vercel serverless) | Contactos, pipelines, oportunidades, conversaciones — en vivo | Cada vez que se abre el dashboard o se pulsa "Sincronizar" (cache de 30 min en Upstash Redis) |
+| `scripts/sync-deep.mjs` (GitHub Actions) | Estadísticas diarias por asesor: mensajes enviados, llamadas | Cron cada 2 horas, guarda en Redis (`tdl:ghl:deep:v1`) |
+
+Variables de entorno requeridas (Vercel + GitHub Secrets):
+```
+GHL_API_KEY
+GHL_LOCATION_ID
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
+```
+
+### ⚠️ Importante: el job nocturno se puede auto-desactivar
+
+GitHub **desactiva automáticamente** cualquier workflow con `schedule:` si el repositorio pasa **60 días sin un `push`**. Si eso pasa, `/api/deep-stats` sigue respondiendo pero con datos congelados (sin aviso visible salvo el banner de "desactualizado" en el dashboard).
+
+Para evitarlo, `.github/workflows/keepalive.yml` hace un commit trivial cada 3 semanas — no debería volver a pasar, pero si el dashboard muestra el banner ámbar de "Estadísticas de actividad desactualizadas":
+
+1. Ve a **GitHub → Actions → Sync GHL Deep Stats**
+2. Si dice "This scheduled workflow is disabled", haz clic en **Enable workflow**
+3. Lánzalo manualmente una vez con **Run workflow** para refrescar los datos de inmediato
+
+También se puede verificar el estado de la conexión con GHL en cualquier momento visitando `/api/debug` (requiere las env vars configuradas en Vercel).
+
+---
+
+## 🚀 Desarrollo local
+
 ```bash
 npm install
 npm run dev
 ```
-Abre http://localhost:5173 — deberías ver el dashboard.
+Abre http://localhost:5173
 
-**Paso 2: Crear repositorio en GitHub**
-1. Ve a https://github.com/new
-2. Ponle nombre: `tdl-dashboard`
-3. Déjalo en **Private** si quieres
-4. Haz clic en **Create repository**
+## 📦 Deploy
 
-**Paso 3: Subir el código**
-```bash
-git init
-git add .
-git commit -m "TDL Dashboard v1"
-git branch -M main
-git remote add origin https://github.com/TU_USUARIO/tdl-dashboard.git
-git push -u origin main
-```
-*(Cambia `TU_USUARIO` por tu usuario de GitHub)*
-
-**Paso 4: Conectar con Vercel**
-1. Ve a https://vercel.com → **Log in with GitHub**
-2. Haz clic en **Add New Project**
-3. Busca `tdl-dashboard` y haz clic en **Import**
-4. Vercel detecta automáticamente que es Vite/React
-5. Deja todo por defecto y haz clic en **Deploy**
-6. En ~1 minuto tendrás tu URL: `https://tdl-dashboard.vercel.app`
-
----
-
-### Opción B — Subir directamente con Vercel CLI (sin GitHub)
-
-**Paso 1: Instalar Vercel CLI**
-```bash
-npm install -g vercel
-```
-
-**Paso 2: Hacer build**
-```bash
-npm install
-npm run build
-```
-
-**Paso 3: Deploy**
-```bash
-vercel
-```
-Sigue las instrucciones en pantalla (te pide hacer login la primera vez).
+El repo está conectado a Vercel vía GitHub — cualquier push a `main` dispara un deploy automático. No requiere pasos manuales adicionales.
 
 ---
 
 ## 📂 Estructura del proyecto
 
 ```
-tdl-dashboard/
-├── index.html          ← Entrada de la app
-├── vite.config.js      ← Configuración de Vite
-├── package.json        ← Dependencias
-├── public/
-│   └── favicon.svg     ← Ícono TDL
-└── src/
-    ├── main.jsx        ← Punto de entrada React
-    └── App.jsx         ← Dashboard completo
+TDL-Dashboard-v1/
+├── api/                    ← Funciones serverless de Vercel (sync, deep-stats, audit, etc.)
+├── scripts/sync-deep.mjs   ← Job nocturno de GitHub Actions (stats históricas)
+├── .github/workflows/      ← sync-deep.yml (cron 2h) + keepalive.yml (evita auto-disable)
+├── src/
+│   ├── App.jsx             ← Dashboard principal
+│   ├── contexts/DataContext.jsx
+│   ├── components/         ← Navbar, ContactModal, etc.
+│   └── views/               ← AdvisorWeeklyView, AuditView, etc.
+└── vercel.json
 ```
-
-## 📊 Archivos CSV que acepta
-
-| Archivo | Tipo detectado |
-|---|---|
-| `Total_Presupuestos_*.csv` | Presupuestos |
-| `LEADS_abandonados_*.csv` | LEADS |
-| `Total_de_llamadas_*.csv` | Llamadas |
-| `Distribución_del_último_mensaje_*.csv` | Mensajes |
-| `Contactos_por_usuario_asignado_*.csv` | Contactos |
-
-Simplemente arrastra los archivos al área de carga — el sistema detecta el tipo automáticamente.
-"# TDL-Dashboard-v1" 
-"# TDL-Dashboard-v1" 
-"# TDL-Dashboard-v1" 

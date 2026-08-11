@@ -1,5 +1,7 @@
-import { ChevronLeft, ChevronRight, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Wifi, WifiOff, AlertTriangle } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
+
+const DEEP_STATS_STALE_MS = 24 * 60 * 60 * 1000; // 24h
 
 function formatWeekLabel(week) {
   const opts = { day: "numeric", month: "short" };
@@ -18,10 +20,21 @@ function relativeTime(date) {
 }
 
 export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent, onAudit }) {
-  const { data, loading, error, lastSync, refresh } = useData();
+  const { data, deepStats, loading, error, lastSync, refresh } = useData();
+
+  const deepStatsUpdatedAt = deepStats?.updatedAt ? new Date(deepStats.updatedAt) : null;
+  const deepStatsStale = deepStatsUpdatedAt && (Date.now() - deepStatsUpdatedAt.getTime() > DEEP_STATS_STALE_MS);
 
   return (
     <header className="sticky top-0 z-50 border-b border-dark-700 bg-dark-950/90 backdrop-blur-md">
+      {deepStatsStale && (
+        <div className="flex items-center justify-center gap-2 bg-amber-500/15 px-4 py-1.5 text-xs text-amber-400">
+          <AlertTriangle size={13} />
+          <span>
+            Estadísticas de actividad desactualizadas (última actualización {relativeTime(deepStatsUpdatedAt)}) — el job nocturno de GitHub Actions no ha corrido recientemente.
+          </span>
+        </div>
+      )}
       <div className="mx-auto max-w-screen-xl px-4 sm:px-6">
         <div className="flex h-14 items-center gap-4">
 

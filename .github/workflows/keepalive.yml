@@ -1,0 +1,32 @@
+name: Keepalive
+
+# GitHub desactiva automáticamente los workflows con "schedule" después de
+# 60 días sin actividad de push en el repo. Este job hace un commit trivial
+# cada 3 semanas para que "Sync GHL Deep Stats" nunca se vuelva a apagar solo.
+
+on:
+  schedule:
+    - cron: '0 6 1,21 * *'   # día 1 y 21 de cada mes, 6am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Actualizar heartbeat
+        run: |
+          mkdir -p .github
+          date -u +"Última señal: %Y-%m-%dT%H:%M:%SZ" > .github/KEEPALIVE.md
+
+      - name: Commit y push si hay cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/KEEPALIVE.md
+          git diff --cached --quiet || git commit -m "chore: keepalive ping (evita auto-disable de workflows programados)"
+          git push
