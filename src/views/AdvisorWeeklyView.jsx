@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp, FileText, Calendar, CheckCircle, XCircle, AlertCircle, Clock } from "lucide-react";
+import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, Zap, Database, X, TrendingUp, FileText, Calendar, CheckCircle, XCircle, AlertCircle, Clock, Search } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import ContactModal from "../components/ContactModal.jsx";
 import { isAutoMessage } from "../../shared/autoMessagePatterns.js";
@@ -342,6 +342,10 @@ function isInbound(dir) {
   if (dir === null || dir === undefined) return false;
   const d = String(dir).toLowerCase();
   return d === "inbound" || d === "0" || d === "type_inbound";
+}
+
+function isActiveAdvisor(a) {
+  return (a.mensajesEnviados || 0) > 0 || (a.llamadas || 0) > 0;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -764,6 +768,24 @@ function AdvisorCard({ advisor, idx, onSelectContact, appointments = [], onShowN
   const [expanded, setExpanded] = useState(false);
   const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
   const activo = advisor.mensajesEnviados > 0 || advisor.llamadas > 0;
+  // Tiene contactos asignados pero cero actividad esta semana — sí requiere atención,
+  // a diferencia de un asesor sin contactos (nada que trabajar, se colapsa abajo).
+  const needsAttention = !activo && advisor.contacts.length > 0;
+
+  // Sin contactos asignados: tarjeta compacta de una línea, no hay nada que mostrar.
+  if (advisor.contacts.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dark-700/60 bg-dark-900/40 p-3.5 flex items-center gap-3">
+        <div className={`flex h-8 w-8 items-center justify-center rounded-full ring-1 ${avatarColor} text-xs font-bold shrink-0`}>
+          {initials(advisor.name)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-cream-muted truncate">{advisor.name}</p>
+        </div>
+        <span className="text-[11px] text-cream-dim shrink-0">Sin contactos asignados</span>
+      </div>
+    );
+  }
 
   const citasCount  = appointments.length;
   const citasShowed = appointments.filter(a => a.status === "showed").length;
@@ -805,9 +827,11 @@ function AdvisorCard({ advisor, idx, onSelectContact, appointments = [], onShowN
             "rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 shrink-0",
             activo
               ? "bg-success-400/10 text-success-400 ring-success-400/20"
-              : "bg-dark-700 text-cream-dim ring-dark-600",
+              : needsAttention
+                ? "bg-danger-400/10 text-danger-400 ring-danger-400/20"
+                : "bg-dark-700 text-cream-dim ring-dark-600",
           ].join(" ")}>
-            {activo ? "Activo" : "Sin actividad"}
+            {activo ? "Activo" : needsAttention ? "Requiere atención" : "Sin actividad"}
           </span>
         </div>
 
@@ -894,6 +918,8 @@ export default function AdvisorWeeklyView({ week }) {
   const [filterAdvisor,   setFilterAdvisor]   = useState(null);
   const [notesAdvisor,    setNotesAdvisor]    = useState(null); // para modal de notas
   const [activityModal,   setActivityModal]   = useState(null); // { advisor, type: "calls"|"messages" }
+  const [searchQuery,     setSearchQuery]     = useState("");
+  const [showOnlyActive,  setShowOnlyActive]  = useState(true); // oculta "Sin actividad" por defecto
 
   // ── Citas de la semana ────────────────────────────────────────────────────
   const [apptData,    setApptData]    = useState(null);
@@ -1099,6 +1125,24 @@ export default function AdvisorWeeklyView({ week }) {
     };
   }, [advisors, apptsByAdvisor]);
 
+  // ── Filtro combinado: búsqueda + "solo activos" ───────────────────────────
+  // Se aplica a la fila de chips Y a la grilla de tarjetas, para que ambas
+  // se reduzcan juntas al buscar o al activar "solo activos".
+  const searchLower = searchQuery.trim().toLowerCase();
+  const filteredAdvisors = useMemo(() => {
+    return sortedAdvisors.filter(a => {
+      if (searchLower && !a.name.toLowerCase().includes(searchLower)) return false;
+      if (showOnlyActive && !isActiveAdvisor(a)) return false;
+      return true;
+    });
+  }, [sortedAdvisors, searchLower, showOnlyActive]);
+
+  // Tarjetas a mostrar: si hay un asesor puntual seleccionado por chip, mostrar
+  // solo ese (intención explícita del usuario, ignora búsqueda/toggle).
+  const gridAdvisors = filterAdvisor
+    ? sortedAdvisors.filter(a => a.name === filterAdvisor)
+    : filteredAdvisors;
+
   if (loading && !data) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -1156,20 +1200,34 @@ export default function AdvisorWeeklyView({ week }) {
           { icon: FileText,      label: "Total notas GHL",   value: totals.sumaNotas,     sub: "suma del campo" },
           { icon: Calendar,      label: "Citas semana",      value: totals.citas,         sub: apptLoading ? "cargando…" : `${totals.citasShowed} asistieron`, gold: totals.citas > 0 },
           { icon: CheckCircle,   label: "No show",           value: totals.citasNoShow,   sub: "de la semana", warn: totals.citasNoShow > 0 },
-        ].map(({ icon: Icon, label, value, sub, warn, gold }) => (
-          <div key={label} className="rounded-xl border border-dark-700 bg-dark-900 p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs text-cream-dim">{label}</p>
-                <p className={`mt-1 text-3xl font-bold tabular-nums ${warn ? "text-danger-400" : gold ? "text-gold-400" : "text-cream"}`}>{value}</p>
-                <p className="mt-0.5 text-xs text-cream-dim">{sub}</p>
+        ].map(({ icon: Icon, label, value, sub, warn, gold }) => {
+          const isActivosTile = label === "Asesores activos";
+          const Tag = isActivosTile ? "button" : "div";
+          return (
+            <Tag
+              key={label}
+              onClick={isActivosTile ? () => setShowOnlyActive(v => !v) : undefined}
+              className={[
+                "rounded-xl border bg-dark-900 p-4 text-left",
+                isActivosTile
+                  ? "cursor-pointer transition-colors hover:bg-dark-800/60 " +
+                    (showOnlyActive ? "border-gold-500/40 ring-1 ring-gold-500/20" : "border-dark-700")
+                  : "border-dark-700",
+              ].join(" ")}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs text-cream-dim">{label}</p>
+                  <p className={`mt-1 text-3xl font-bold tabular-nums ${warn ? "text-danger-400" : gold ? "text-gold-400" : "text-cream"}`}>{value}</p>
+                  <p className="mt-0.5 text-xs text-cream-dim">{isActivosTile ? (showOnlyActive ? "filtro activo — clic para ver todos" : sub) : sub}</p>
+                </div>
+                <div className={`rounded-lg p-2 ${warn ? "bg-danger-400/10" : gold ? "bg-gold-500/10" : "bg-dark-800"}`}>
+                  <Icon size={16} className={warn ? "text-danger-400" : gold ? "text-gold-400" : "text-cream-muted"} />
+                </div>
               </div>
-              <div className={`rounded-lg p-2 ${warn ? "bg-danger-400/10" : gold ? "bg-gold-500/10" : "bg-dark-800"}`}>
-                <Icon size={16} className={warn ? "text-danger-400" : gold ? "text-gold-400" : "text-cream-muted"} />
-              </div>
-            </div>
-          </div>
-        ))}
+            </Tag>
+          );
+        })}
       </div>
 
       {/* Indicador de fuente de datos */}
@@ -1183,6 +1241,44 @@ export default function AdvisorWeeklyView({ week }) {
           : <><Zap size={13} /> <span><strong>Datos en tiempo real</strong> — aproximación basada en el último mensaje de cada conversación. Para datos exactos, configura el job nocturno de GitHub Actions.</span></>
         }
       </div>
+
+      {/* ── Búsqueda + toggle "solo activos" ── */}
+      {advisors.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[180px] max-w-xs flex-1">
+            <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-cream-dim" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Buscar asesor…"
+              className="w-full rounded-full border border-dark-600 bg-dark-800/60 py-1.5 pl-8 pr-3 text-xs text-cream placeholder:text-cream-dim focus:border-gold-500/50 focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-cream-dim hover:text-cream"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowOnlyActive(v => !v)}
+            className={[
+              "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+              showOnlyActive
+                ? "border-gold-500/40 bg-gold-500/20 text-gold-400"
+                : "border-dark-600 text-cream-dim hover:border-dark-500 hover:text-cream",
+            ].join(" ")}
+          >
+            {showOnlyActive ? "Solo activos" : "Todos los asesores"}
+          </button>
+          <span className="shrink-0 text-xs text-cream-dim">
+            Mostrando {gridAdvisors.length} de {advisors.length}
+          </span>
+        </div>
+      )}
 
       {/* ── Filtro de asesores ── */}
       {advisors.length > 0 && (
@@ -1199,7 +1295,7 @@ export default function AdvisorWeeklyView({ week }) {
           >
             Todos
           </button>
-          {sortedAdvisors.map((a) => (
+          {filteredAdvisors.map((a) => (
             <button
               key={a.name}
               onClick={() => setFilterAdvisor(prev => prev === a.name ? null : a.name)}
@@ -1239,12 +1335,13 @@ export default function AdvisorWeeklyView({ week }) {
         <div className="flex h-40 items-center justify-center rounded-xl border border-dark-700 bg-dark-900">
           <p className="text-sm text-cream-dim">Sin datos. Presiona Sincronizar.</p>
         </div>
+      ) : gridAdvisors.length === 0 ? (
+        <div className="flex h-32 items-center justify-center rounded-xl border border-dark-700 bg-dark-900">
+          <p className="text-sm text-cream-dim">Ningún asesor coincide con el filtro actual.</p>
+        </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {(filterAdvisor
-            ? sortedAdvisors.filter(a => a.name === filterAdvisor)
-            : sortedAdvisors
-          ).map((advisor, i) => (
+          {gridAdvisors.map((advisor, i) => (
             <AdvisorCard
               key={advisor.name}
               advisor={advisor}
