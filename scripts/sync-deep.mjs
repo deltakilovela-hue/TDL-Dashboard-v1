@@ -163,7 +163,10 @@ function classifyMessage(msg) {
   const isCall = type === "TYPE_CALL" || type === "CALL" || type === "10";
 
   if (isCall) {
-    const callStatus = (msg.meta?.callStatus || "").toLowerCase();
+    // GHL anida el status real en meta.call.status (o lo repite en msg.status);
+    // meta.callStatus (plano) no existe y siempre daba undefined — bug confirmado
+    // contra la API real: "completed" / "no-answer" / "busy".
+    const callStatus = (msg.status || msg.meta?.call?.status || "").toLowerCase();
     const isOutbound = dir === "outbound" || dir === "1";
     const answered   = callStatus === "completed" || callStatus === "answered" || callStatus === "connected";
     const missed     = callStatus === "missed"    || callStatus === "no-answer" || callStatus === "busy";
