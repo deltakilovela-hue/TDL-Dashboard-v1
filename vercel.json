@@ -8,6 +8,9 @@
     },
     "api/status.js": {
       "maxDuration": 10
+    },
+    "api/summarize.js": {
+      "maxDuration": 30
     }
   }
 }

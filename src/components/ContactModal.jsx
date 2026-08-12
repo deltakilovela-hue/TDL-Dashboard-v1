@@ -1,5 +1,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { X, MessageSquare, Phone, FileText, PhoneCall, PhoneMissed, ChevronDown, ChevronUp, Pencil, Save, XCircle, CheckCircle, Plus, Send } from "lucide-react";
+import { X, MessageSquare, Phone, FileText, PhoneCall, PhoneMissed, ChevronDown, ChevronUp, Pencil, Save, XCircle, CheckCircle, Plus, Send, Sparkles, RefreshCw } from "lucide-react";
+
+// Campo GHL "Transcripción de llamada ☎" — ID confirmado vía /locations/{id}/customFields
+const TRANSCRIPT_FIELD_ID = "uLTVDnWx1MuoYB2u44Sm";
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
 function stripHtml(str) {
@@ -24,6 +27,20 @@ function formatDateShort(str) {
   return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
 }
 function hasValue(v) { return v && v !== "(No hay datos)" && v !== "--"; }
+
+// Render simple: convierte **negritas** del texto del resumen a <strong>, sin HTML arbitrario
+function renderSummaryLine(line, i) {
+  const parts = line.split(/(\*\*.+?\*\*)/g).filter(Boolean);
+  return (
+    <p key={i} className="leading-relaxed">
+      {parts.map((p, j) =>
+        p.startsWith("**") && p.endsWith("**")
+          ? <strong key={j} className="text-gold-300">{p.slice(2, -2)}</strong>
+          : <span key={j}>{p}</span>
+      )}
+    </p>
+  );
+}
 
 // ── Definición de encuestas con IDs de GHL ───────────────────────────────────
 // Encuesta de Primer Contacto — 10 campos
@@ -263,10 +280,15 @@ export default function ContactModal({ contact, onClose }) {
   const [savingNote,  setSavingNote]  = useState(false);
   const [noteError,   setNoteError]   = useState(null);
   const [noteSuccess, setNoteSuccess] = useState(false);
+  // Resumen IA
+  const [summary,        setSummary]        = useState(null); // { summary, generatedAt }
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError,   setSummaryError]   = useState(null);
   // Local copy of contact to reflect edits immediately
   const [localContact, setLocalContact] = useState(contact);
 
   useEffect(() => { setLocalContact(contact); }, [contact]);
+  useEffect(() => { setSummary(null); setSummaryError(null); }, [contact?.id]);
 
   const load = useCallback(async () => {
     if (!contact?.id) return;
@@ -344,6 +366,7 @@ export default function ContactModal({ contact, onClose }) {
     const histId   = "JchVLh13uAo6SdV6hYRg";
     if (idMap[sumaId]) overrides.sumaNotas     = idMap[sumaId];
     if (idMap[histId]) overrides.historialNotas = idMap[histId];
+    if (idMap[TRANSCRIPT_FIELD_ID]) overrides.transcripcionLlamada = idMap[TRANSCRIPT_FIELD_ID];
 
     return { ...localContact, ...overrides };
   }, [localContact, detail]);
@@ -370,6 +393,30 @@ export default function ContactModal({ contact, onClose }) {
       setSavingNote(false);
     }
   }, [contact?.id, noteText, load]);
+
+  const handleGenerateSummary = useCallback(async () => {
+    setSummaryLoading(true); setSummaryError(null);
+    try {
+      const contactName = `${contact.firstName || ""} ${contact.lastName || ""}`.trim();
+      const transcript   = hasValue(liveContact.transcripcionLlamada) ? liveContact.transcripcionLlamada : "";
+      const notesBodies  = (detail?.notes || []).map(n => stripHtml(n.body)).filter(Boolean);
+      const historial    = hasValue(liveContact.historialNotas) ? stripHtml(liveContact.historialNotas) : "";
+      const notesText    = [...notesBodies, historial].filter(Boolean).join("\n\n");
+
+      const r = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactName, transcript, notes: notesText }),
+      });
+      const json = await r.json();
+      if (!json.ok) { setSummaryError(json.error); return; }
+      setSummary(json);
+    } catch (e) {
+      setSummaryError(e.message);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [contact, liveContact, detail]);
 
   if (!contact) return null;
 
@@ -447,6 +494,9 @@ export default function ContactModal({ contact, onClose }) {
           </TabBtn>
           <TabBtn active={tab === "notas"} onClick={() => setTab("notas")}>
             📝 Notas {!loading && <span className="opacity-60">({notes.length})</span>}
+          </TabBtn>
+          <TabBtn active={tab === "resumen"} onClick={() => setTab("resumen")}>
+            ✨ Resumen IA
           </TabBtn>
           <TabBtn active={tab === "info"} onClick={() => setTab("info")}>👤 Info</TabBtn>
         </div>
@@ -574,6 +624,75 @@ export default function ContactModal({ contact, onClose }) {
               )}
             </div>
           )}
+
+          {/* ── TAB: Resumen IA ── */}
+          {!loading && !error && tab === "resumen" && (() => {
+            const transcript  = liveContact.transcripcionLlamada;
+            const hasTranscript = hasValue(transcript);
+            const hasNotesData  = notes.length > 0 || hasValue(liveContact.historialNotas);
+            const canGenerate   = hasTranscript || hasNotesData;
+
+            return (
+              <div className="flex flex-col gap-3 p-4">
+                <div className="rounded-xl border border-gold-500/20 bg-gold-500/5 p-3 flex items-start gap-2.5">
+                  <Sparkles size={14} className="text-gold-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-gold-200/90 leading-relaxed">
+                    Genera un resumen con IA a partir de la transcripción de llamada y las notas registradas de este contacto.
+                  </p>
+                </div>
+
+                {!canGenerate ? (
+                  <p className="text-center text-sm text-zinc-500 py-8">
+                    Sin transcripción de llamada ni notas registradas para este contacto.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap gap-1.5 text-[11px] text-zinc-500">
+                        {hasTranscript && <span className="rounded-full bg-zinc-800 px-2 py-0.5">📞 Transcripción disponible</span>}
+                        {hasNotesData  && <span className="rounded-full bg-zinc-800 px-2 py-0.5">📝 {notes.length} nota(s)</span>}
+                      </div>
+                      <button
+                        onClick={handleGenerateSummary}
+                        disabled={summaryLoading}
+                        className="flex items-center gap-1.5 text-xs font-medium text-gold-400 hover:text-gold-300 border border-gold-500/40 hover:border-gold-500/70 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 shrink-0"
+                      >
+                        {summaryLoading
+                          ? <><div className="h-3 w-3 animate-spin rounded-full border-2 border-gold-500/30 border-t-gold-400" /> Generando…</>
+                          : summary
+                            ? <><RefreshCw size={12} /> Regenerar</>
+                            : <><Sparkles size={12} /> Generar resumen</>}
+                      </button>
+                    </div>
+
+                    {summaryError && (
+                      <div className="rounded-xl border border-red-800 bg-red-900/20 p-3 text-xs text-red-400">❌ {summaryError}</div>
+                    )}
+
+                    {summary && (
+                      <div className="rounded-xl border border-zinc-700 bg-zinc-800/40 p-4 flex flex-col gap-2">
+                        <div className="text-sm text-zinc-100">
+                          {summary.summary.split("\n").filter(l => l.trim()).map(renderSummaryLine)}
+                        </div>
+                        <p className="text-[10px] text-zinc-600 mt-1">
+                          Generado {formatDate(summary.generatedAt)} · {summary.model}
+                        </p>
+                      </div>
+                    )}
+
+                    {hasTranscript && (
+                      <details className="rounded-xl border border-zinc-800 overflow-hidden">
+                        <summary className="px-4 py-2.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 cursor-pointer select-none bg-zinc-800/40">
+                          📞 Ver transcripción completa
+                        </summary>
+                        <p className="p-4 text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed border-t border-zinc-800">{transcript}</p>
+                      </details>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ── TAB: Info ── */}
           {!loading && !error && tab === "info" && (

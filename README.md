@@ -21,6 +21,12 @@ UPSTASH_REDIS_REST_URL
 UPSTASH_REDIS_REST_TOKEN
 ```
 
+Solo en Vercel (feature de Resumen IA en la ficha de contacto, no la usa el job nocturno):
+```
+OPENAI_API_KEY
+OPENAI_MODEL   # opcional, default "gpt-4o-mini"
+```
+
 ### ⚠️ Importante: el job nocturno se puede auto-desactivar
 
 GitHub **desactiva automáticamente** cualquier workflow con `schedule:` si el repositorio pasa **60 días sin un `push`**. Si eso pasa, `/api/deep-stats` sigue respondiendo pero con datos congelados (sin aviso visible salvo el banner de "desactualizado" en el dashboard).
