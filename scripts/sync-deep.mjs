@@ -99,15 +99,26 @@ function sameCursor(a, b) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── Descargar todos los usuarios ──────────────────────────────────────────────
-async function fetchUsers() {
-  try {
-    const data = await ghlGet("/users/", { locationId: GHL_LOCATION_ID });
-    const map  = {};
-    (data.users || []).forEach(u => {
-      if (u.id) map[u.id] = u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "(Sin nombre)";
-    });
-    return map;
-  } catch (e) { console.warn("fetchUsers:", e.message); return {}; }
+// Con reintentos: si esto falla en silencio (ej. un 401 transitorio de GHL),
+// TODA la corrida atribuye la actividad al userId crudo en vez del nombre del
+// asesor, partiendo el historial de cada asesor en dos claves distintas.
+// Bug real, ya visto en producción — ver commit que agrega este comentario.
+async function fetchUsers(retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const data = await ghlGet("/users/", { locationId: GHL_LOCATION_ID });
+      const map  = {};
+      (data.users || []).forEach(u => {
+        if (u.id) map[u.id] = u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "(Sin nombre)";
+      });
+      if (Object.keys(map).length > 0) return map;
+      console.warn(`fetchUsers intento ${attempt}: respuesta vacía`);
+    } catch (e) {
+      console.warn(`fetchUsers intento ${attempt}:`, e.message);
+    }
+    if (attempt < retries) await sleep(2000);
+  }
+  return {};
 }
 
 // ── Descargar todos los contactos (id + asesor asignado) ──────────────────────
@@ -323,6 +334,14 @@ async function main() {
   console.log("\n📋 Descargando usuarios…");
   const userMap = await fetchUsers();
   console.log(`   ${Object.keys(userMap).length} usuarios`);
+
+  // Sin userMap, TODA la actividad de esta corrida se atribuiría al userId
+  // crudo en vez del nombre del asesor, corrompiendo el merge con datos mal
+  // etiquetados. Mejor abortar y conservar el historial de la corrida anterior.
+  if (Object.keys(userMap).length === 0) {
+    console.error("❌ No se pudo obtener el mapa de usuarios después de varios intentos. Abortando sin guardar (se conserva el histórico anterior).");
+    process.exit(1);
+  }
 
   const dailyStats = {};
 
