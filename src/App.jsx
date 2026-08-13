@@ -3,6 +3,7 @@ import { DataProvider } from "./contexts/DataContext.jsx";
 import Navbar from "./components/Navbar.jsx";
 import AdvisorWeeklyView from "./views/AdvisorWeeklyView.jsx";
 import AuditView from "./views/AuditView.jsx";
+import AdvisorReportView from "./views/AdvisorReportView.jsx";
 
 function getWeekOf(anchor = new Date()) {
   const d   = new Date(anchor);
@@ -17,7 +18,7 @@ function getWeekOf(anchor = new Date()) {
 }
 
 function Dashboard() {
-  const [view, setView]  = useState("weekly"); // "weekly" | "audit"
+  const [view, setView]  = useState("weekly"); // "weekly" | "audit" | "reporte"
   const [week, setWeek] = useState(() => getWeekOf());
 
   const prevWeek    = () => setWeek(w => getWeekOf(new Date(w.from.getTime() - 7 * 86_400_000)));
@@ -49,6 +50,24 @@ function Dashboard() {
     );
   }
 
+  if (view === "reporte") {
+    return (
+      <div className="min-h-screen bg-dark-950">
+        <div className="border-b border-dark-700 px-6 py-3 flex items-center gap-4">
+          <button
+            onClick={() => setView("weekly")}
+            className="text-sm text-cream-dim hover:text-cream flex items-center gap-1 transition-colors"
+          >
+            ← Volver al Dashboard
+          </button>
+        </div>
+        <main className="mx-auto max-w-screen-xl px-4 sm:px-6 py-8">
+          <AdvisorReportView />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-dark-950">
       <Navbar
@@ -58,6 +77,7 @@ function Dashboard() {
         onNext={nextWeek}
         onCurrent={currentWeek}
         onAudit={() => setView("audit")}
+        onReport={() => setView("reporte")}
       />
       <main className="mx-auto max-w-screen-xl px-4 sm:px-6 py-8">
         <AdvisorWeeklyView week={week} />

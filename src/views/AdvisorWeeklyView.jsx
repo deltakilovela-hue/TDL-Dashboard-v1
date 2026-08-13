@@ -6,7 +6,7 @@ import { isAutoMessage } from "../../shared/autoMessagePatterns.js";
 
 // ── Configuración de roles ────────────────────────────────────────────────────
 // Usuarios que NO son asesores de ventas (ocultar del dashboard)
-const EXCLUDED_USERS = new Set([
+export const EXCLUDED_USERS = new Set([
   "Alma Benitez",
   "Javier Vendedor",
   "Jonathan vendedor vendedor",

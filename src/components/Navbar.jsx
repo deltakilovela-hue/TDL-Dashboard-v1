@@ -19,7 +19,7 @@ function relativeTime(date) {
   return `hace ${Math.floor(diff / 86400)} d`;
 }
 
-export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent, onAudit }) {
+export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent, onAudit, onReport }) {
   const { data, deepStats, loading, error, lastSync, refresh } = useData();
 
   const deepStatsUpdatedAt = deepStats?.updatedAt ? new Date(deepStats.updatedAt) : null;
@@ -94,6 +94,16 @@ export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent,
                   </span></>
               ) : null}
             </div>
+
+            {onReport && (
+              <button
+                onClick={onReport}
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ring-1 ring-gold-500/30 text-gold-400 hover:bg-gold-500/10 transition-all"
+                title="Reporte por asesor (filtrar por día/semana/mes/histórico)"
+              >
+                📊 <span className="hidden sm:inline">Reporte</span>
+              </button>
+            )}
 
             {onAudit && (
               <button
