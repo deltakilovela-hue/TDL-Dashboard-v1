@@ -71,6 +71,11 @@ function ChannelBar({ label, icon: Icon, value, max }) {
 export default function AdvisorReportView() {
   const { data, deepStats } = useData();
 
+  // GHL a veces guarda actividad bajo el userId crudo en vez del nombre del
+  // asesor (ej. si /users/ falló momentáneamente en el job nocturno). Se
+  // filtra por si acaso, aunque scripts/sync-deep.mjs ya no debería producirlos.
+  const looksLikeRawId = s => !s.includes(" ") && /^[a-zA-Z0-9]{15,}$/.test(s);
+
   const advisorNames = useMemo(() => {
     const names = new Set([
       ...(data?.usuarios || []).map(u => u.name).filter(Boolean),
@@ -78,7 +83,7 @@ export default function AdvisorReportView() {
     ]);
     EXCLUDED_USERS.forEach(n => names.delete(n));
     names.delete("(Sin asignar)");
-    return [...names].sort((a, b) => a.localeCompare(b, "es"));
+    return [...names].filter(n => !looksLikeRawId(n)).sort((a, b) => a.localeCompare(b, "es"));
   }, [data, deepStats]);
 
   const [selectedAdvisor, setSelectedAdvisor] = useState(null);
@@ -145,10 +150,19 @@ export default function AdvisorReportView() {
     return result;
   }, [advisorDaily, from, to]);
 
+  // GHL no guarda un historial de "cuándo se asignó" un lead — solo el estado
+  // actual. Como proxy usamos dateAdded (cuándo entró el contacto), que en la
+  // práctica coincide con cuándo se le asignó vía los flujos de distribución.
+  // En "histórico" no se acota por fecha: es el total que tiene asignado hoy.
   const leadsAsignados = useMemo(() => {
     if (!data?.contacts) return 0;
-    return data.contacts.filter(c => c.assignedTo === advisor).length;
-  }, [data, advisor]);
+    return data.contacts.filter(c => {
+      if (c.assignedTo !== advisor) return false;
+      if (rangeType === "historico") return true;
+      const d = c.dateAdded && c.dateAdded !== "(No hay datos)" ? new Date(c.dateAdded) : null;
+      return d && !isNaN(d) && from && d >= from && d <= to;
+    }).length;
+  }, [data, advisor, rangeType, from, to]);
 
   const usingDeep = !!deepStats?.dailyStats;
   const maxChannel = Math.max(agg.mensajesPorCanal.correo, agg.mensajesPorCanal.sms, agg.mensajesPorCanal.whatsappQr, agg.mensajesPorCanal.otros, 1);
@@ -225,7 +239,7 @@ export default function AdvisorReportView() {
         <>
           {/* ── KPIs principales ── */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KpiCard icon={Users}         label="Leads asignados"    value={leadsAsignados}          sub="actual" />
+            <KpiCard icon={Users}         label="Leads asignados"    value={leadsAsignados}          sub={rangeType === "historico" ? "total actual" : "nuevos en el rango"} />
             <KpiCard icon={Users}         label="Leads contactados" value={agg.leadsContactados}    sub="distintos en el rango" color="gold" />
             <KpiCard icon={MessageSquare} label="Mensajes enviados" value={agg.mensajesEnviados}     sub="en el rango" color="gold" />
             <KpiCard icon={FileText}      label="Notas agregadas"   value={agg.notasTotal}           sub="en el rango" />
