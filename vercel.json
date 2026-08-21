@@ -14,6 +14,9 @@
     },
     "api/advisor-notes-detail.js": {
       "maxDuration": 60
+    },
+    "api/task-create.js": {
+      "maxDuration": 15
     }
   }
 }

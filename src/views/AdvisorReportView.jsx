@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { Users, MessageSquare, Phone, PhoneCall, PhoneMissed, FileText, Mail, Smartphone, ChevronLeft, ChevronRight, Database, Sparkles, RefreshCw } from "lucide-react";
+import { Users, MessageSquare, Phone, PhoneCall, PhoneMissed, FileText, Mail, Smartphone, ChevronLeft, ChevronRight, Database, Sparkles, RefreshCw, Plus, Send, CheckCircle } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import { EXCLUDED_USERS } from "./AdvisorWeeklyView.jsx";
 import ContactModal, { stripHtml, renderSummaryLine } from "../components/ContactModal.jsx";
@@ -66,6 +66,178 @@ function ChannelBar({ label, icon: Icon, value, max }) {
         <div className="h-2 rounded-full bg-gold-500/60 transition-all" style={{ width: `${pct}%` }} />
       </div>
       <span className="w-10 shrink-0 text-right text-sm font-bold tabular-nums text-cream">{value}</span>
+    </div>
+  );
+}
+
+// ── Tarjeta de resumen por lead — con acciones rápidas de nota/tarea ──────────
+function LeadSummaryCard({ contactId, name, contact, summary, error, advisorUserId, onOpenContact }) {
+  const [activeForm, setActiveForm] = useState(null); // null | "nota" | "tarea"
+
+  const [noteText,  setNoteText]  = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteMsg,    setNoteMsg]    = useState(null); // { ok, error }
+
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDue,   setTaskDue]   = useState("");
+  const [taskBody,  setTaskBody]  = useState("");
+  const [savingTask, setSavingTask] = useState(false);
+  const [taskMsg,    setTaskMsg]    = useState(null);
+
+  async function saveNote() {
+    if (!noteText.trim()) return;
+    setSavingNote(true); setNoteMsg(null);
+    try {
+      const r = await fetch("/api/note-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId, body: noteText.trim() }),
+      });
+      const json = await r.json();
+      if (!json.ok) { setNoteMsg({ ok: false, error: json.error }); return; }
+      setNoteMsg({ ok: true });
+      setNoteText("");
+    } catch (e) {
+      setNoteMsg({ ok: false, error: e.message });
+    } finally {
+      setSavingNote(false);
+    }
+  }
+
+  async function saveTask() {
+    if (!taskTitle.trim()) return;
+    setSavingTask(true); setTaskMsg(null);
+    try {
+      const r = await fetch("/api/task-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactId,
+          title: taskTitle.trim(),
+          body: taskBody.trim() || undefined,
+          dueDate: taskDue || undefined,
+          assignedTo: advisorUserId || undefined,
+        }),
+      });
+      const json = await r.json();
+      if (!json.ok) { setTaskMsg({ ok: false, error: json.error }); return; }
+      setTaskMsg({ ok: true });
+      setTaskTitle(""); setTaskDue(""); setTaskBody("");
+    } catch (e) {
+      setTaskMsg({ ok: false, error: e.message });
+    } finally {
+      setSavingTask(false);
+    }
+  }
+
+  return (
+    <div className="px-5 py-4">
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <button
+          onClick={onOpenContact}
+          className="text-sm font-semibold text-cream hover:text-gold-400 transition-colors disabled:cursor-default"
+          disabled={!contact}
+        >
+          {name}
+        </button>
+        {contact?.dateAdded && contact.dateAdded !== "(No hay datos)" && (
+          <span className="text-[11px] text-cream-dim shrink-0">
+            Asignado: {new Date(contact.dateAdded).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
+          </span>
+        )}
+      </div>
+
+      {error ? (
+        <p className="text-xs text-danger-400">❌ {error}</p>
+      ) : (
+        <div className="text-xs text-cream-muted">
+          {summary.split("\n").filter(l => l.trim()).map(renderSummaryLine)}
+        </div>
+      )}
+
+      {/* Acciones rápidas */}
+      <div className="flex gap-2 mt-2.5">
+        <button
+          onClick={() => setActiveForm(f => f === "nota" ? null : "nota")}
+          className={[
+            "flex items-center gap-1 text-[11px] font-medium rounded-full px-2.5 py-1 border transition-colors",
+            activeForm === "nota" ? "border-gold-500/50 text-gold-400 bg-gold-500/10" : "border-dark-600 text-cream-dim hover:border-gold-500/40 hover:text-gold-400",
+          ].join(" ")}
+        >
+          <Plus size={10} /> Nota
+        </button>
+        <button
+          onClick={() => setActiveForm(f => f === "tarea" ? null : "tarea")}
+          className={[
+            "flex items-center gap-1 text-[11px] font-medium rounded-full px-2.5 py-1 border transition-colors",
+            activeForm === "tarea" ? "border-gold-500/50 text-gold-400 bg-gold-500/10" : "border-dark-600 text-cream-dim hover:border-gold-500/40 hover:text-gold-400",
+          ].join(" ")}
+        >
+          <Plus size={10} /> Tarea
+        </button>
+      </div>
+
+      {activeForm === "nota" && (
+        <div className="mt-2 rounded-lg border border-dark-700 bg-dark-800/40 p-3 flex flex-col gap-2">
+          <textarea
+            value={noteText}
+            onChange={e => setNoteText(e.target.value)}
+            rows={2}
+            placeholder="Escribe una nota para este contacto…"
+            className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-xs text-cream placeholder:text-cream-dim focus:outline-none focus:border-gold-500/50 resize-none"
+          />
+          {noteMsg?.error && <p className="text-[11px] text-danger-400">❌ {noteMsg.error}</p>}
+          {noteMsg?.ok && <p className="text-[11px] text-success-400 flex items-center gap-1"><CheckCircle size={11} /> Nota guardada</p>}
+          <div className="flex justify-end">
+            <button
+              onClick={saveNote}
+              disabled={savingNote || !noteText.trim()}
+              className="flex items-center gap-1 text-[11px] font-medium text-gold-400 hover:text-gold-300 border border-gold-500/40 rounded-lg px-2.5 py-1 transition-colors disabled:opacity-40"
+            >
+              <Send size={10} /> {savingNote ? "Guardando…" : "Guardar nota"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeForm === "tarea" && (
+        <div className="mt-2 rounded-lg border border-dark-700 bg-dark-800/40 p-3 flex flex-col gap-2">
+          <input
+            type="text"
+            value={taskTitle}
+            onChange={e => setTaskTitle(e.target.value)}
+            placeholder="Título de la tarea…"
+            className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-1.5 text-xs text-cream placeholder:text-cream-dim focus:outline-none focus:border-gold-500/50"
+          />
+          <textarea
+            value={taskBody}
+            onChange={e => setTaskBody(e.target.value)}
+            rows={2}
+            placeholder="Descripción (opcional)…"
+            className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-xs text-cream placeholder:text-cream-dim focus:outline-none focus:border-gold-500/50 resize-none"
+          />
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={taskDue}
+              onChange={e => setTaskDue(e.target.value)}
+              className="bg-dark-900 border border-dark-700 rounded-lg px-3 py-1.5 text-xs text-cream focus:outline-none focus:border-gold-500/50"
+            />
+            <span className="text-[10px] text-cream-dim">Fecha límite (opcional — sin elegir, mañana)</span>
+          </div>
+          {taskMsg?.error && <p className="text-[11px] text-danger-400">❌ {taskMsg.error}</p>}
+          {taskMsg?.ok && <p className="text-[11px] text-success-400 flex items-center gap-1"><CheckCircle size={11} /> Tarea creada</p>}
+          <div className="flex justify-end">
+            <button
+              onClick={saveTask}
+              disabled={savingTask || !taskTitle.trim()}
+              className="flex items-center gap-1 text-[11px] font-medium text-gold-400 hover:text-gold-300 border border-gold-500/40 rounded-lg px-2.5 py-1 transition-colors disabled:opacity-40"
+            >
+              <Send size={10} /> {savingTask ? "Guardando…" : "Guardar tarea"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -175,6 +347,12 @@ export default function AdvisorReportView() {
     (data?.contacts || []).forEach(c => { map[c.id] = c; });
     return map;
   }, [data]);
+
+  // userId de GHL del asesor seleccionado — para asignarle las tareas que se creen desde aquí
+  const advisorUserId = useMemo(
+    () => (data?.usuarios || []).find(u => u.name === advisor)?.id || null,
+    [data, advisor]
+  );
 
   // ── Detalle de notas (texto + contacto) — bajo demanda, no viene del cache ────
   const [noteDetail,        setNoteDetail]        = useState(null); // { byContact }
@@ -388,31 +566,18 @@ export default function AdvisorReportView() {
               </div>
 
               {leadSummaries && (
-                <div className="max-h-[40rem] overflow-y-auto divide-y divide-dark-700/50">
+                <div className="max-h-[48rem] overflow-y-auto divide-y divide-dark-700/50">
                   {leadSummaries.map(({ contactId, name, contact, summary, error }) => (
-                    <div key={contactId} className="px-5 py-4">
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <button
-                          onClick={() => contact && setSelectedContact(contact)}
-                          className="text-sm font-semibold text-cream hover:text-gold-400 transition-colors disabled:cursor-default"
-                          disabled={!contact}
-                        >
-                          {name}
-                        </button>
-                        {contact?.dateAdded && contact.dateAdded !== "(No hay datos)" && (
-                          <span className="text-[11px] text-cream-dim shrink-0">
-                            Asignado: {new Date(contact.dateAdded).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
-                          </span>
-                        )}
-                      </div>
-                      {error ? (
-                        <p className="text-xs text-danger-400">❌ {error}</p>
-                      ) : (
-                        <div className="text-xs text-cream-muted">
-                          {summary.split("\n").filter(l => l.trim()).map(renderSummaryLine)}
-                        </div>
-                      )}
-                    </div>
+                    <LeadSummaryCard
+                      key={contactId}
+                      contactId={contactId}
+                      name={name}
+                      contact={contact}
+                      summary={summary}
+                      error={error}
+                      advisorUserId={advisorUserId}
+                      onOpenContact={() => contact && setSelectedContact(contact)}
+                    />
                   ))}
                 </div>
               )}
