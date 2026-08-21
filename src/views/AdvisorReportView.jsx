@@ -363,6 +363,62 @@ export default function AdvisorReportView() {
         </div>
       ) : (
         <>
+          {/* ── Resumen de asesor (IA) — primero, es lo que se quiere ver de entrada ── */}
+          {noteDetail && Object.keys(noteDetail.byContact).length > 0 && (
+            <div className="rounded-xl border border-gold-500/20 bg-dark-900 overflow-hidden">
+              <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-dark-700">
+                <div>
+                  <p className="text-sm font-semibold text-cream flex items-center gap-1.5"><Sparkles size={14} className="text-gold-400" /> Resumen de asesor (IA)</p>
+                  <p className="text-xs text-cream-dim mt-0.5">
+                    Por cada lead con notas en el rango: cuándo se le asignó y un resumen de lo registrado.
+                    {Object.keys(noteDetail.byContact).length > MAX_LEADS_FOR_SUMMARY && ` Limitado a los primeros ${MAX_LEADS_FOR_SUMMARY} leads — reduce el rango para cubrir el resto.`}
+                  </p>
+                </div>
+                <button
+                  onClick={generateLeadSummaries}
+                  disabled={leadSummariesLoading}
+                  className="flex items-center gap-1.5 text-xs font-medium text-gold-400 hover:text-gold-300 border border-gold-500/40 hover:border-gold-500/70 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 shrink-0"
+                >
+                  {leadSummariesLoading
+                    ? <><div className="h-3 w-3 animate-spin rounded-full border-2 border-gold-500/30 border-t-gold-400" /> Generando…</>
+                    : leadSummaries
+                      ? <><RefreshCw size={12} /> Regenerar</>
+                      : <><Sparkles size={12} /> Generar resumen por lead</>}
+                </button>
+              </div>
+
+              {leadSummaries && (
+                <div className="max-h-[40rem] overflow-y-auto divide-y divide-dark-700/50">
+                  {leadSummaries.map(({ contactId, name, contact, summary, error }) => (
+                    <div key={contactId} className="px-5 py-4">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <button
+                          onClick={() => contact && setSelectedContact(contact)}
+                          className="text-sm font-semibold text-cream hover:text-gold-400 transition-colors disabled:cursor-default"
+                          disabled={!contact}
+                        >
+                          {name}
+                        </button>
+                        {contact?.dateAdded && contact.dateAdded !== "(No hay datos)" && (
+                          <span className="text-[11px] text-cream-dim shrink-0">
+                            Asignado: {new Date(contact.dateAdded).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                      {error ? (
+                        <p className="text-xs text-danger-400">❌ {error}</p>
+                      ) : (
+                        <div className="text-xs text-cream-muted">
+                          {summary.split("\n").filter(l => l.trim()).map(renderSummaryLine)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── KPIs principales ── */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <KpiCard icon={Users}         label="Leads asignados"    value={leadsAsignados}          sub={rangeType === "historico" ? "total actual" : "nuevos en el rango"} />
@@ -457,62 +513,6 @@ export default function AdvisorReportView() {
               </div>
             )}
           </div>
-
-          {/* ── Resumen de asesor (IA) ── */}
-          {noteDetail && Object.keys(noteDetail.byContact).length > 0 && (
-            <div className="rounded-xl border border-gold-500/20 bg-dark-900 overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-dark-700">
-                <div>
-                  <p className="text-sm font-semibold text-cream flex items-center gap-1.5"><Sparkles size={14} className="text-gold-400" /> Resumen de asesor (IA)</p>
-                  <p className="text-xs text-cream-dim mt-0.5">
-                    Por cada lead con notas en el rango: cuándo se le asignó y un resumen de lo registrado.
-                    {Object.keys(noteDetail.byContact).length > MAX_LEADS_FOR_SUMMARY && ` Limitado a los primeros ${MAX_LEADS_FOR_SUMMARY} leads — reduce el rango para cubrir el resto.`}
-                  </p>
-                </div>
-                <button
-                  onClick={generateLeadSummaries}
-                  disabled={leadSummariesLoading}
-                  className="flex items-center gap-1.5 text-xs font-medium text-gold-400 hover:text-gold-300 border border-gold-500/40 hover:border-gold-500/70 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 shrink-0"
-                >
-                  {leadSummariesLoading
-                    ? <><div className="h-3 w-3 animate-spin rounded-full border-2 border-gold-500/30 border-t-gold-400" /> Generando…</>
-                    : leadSummaries
-                      ? <><RefreshCw size={12} /> Regenerar</>
-                      : <><Sparkles size={12} /> Generar resumen por lead</>}
-                </button>
-              </div>
-
-              {leadSummaries && (
-                <div className="max-h-[40rem] overflow-y-auto divide-y divide-dark-700/50">
-                  {leadSummaries.map(({ contactId, name, contact, summary, error }) => (
-                    <div key={contactId} className="px-5 py-4">
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <button
-                          onClick={() => contact && setSelectedContact(contact)}
-                          className="text-sm font-semibold text-cream hover:text-gold-400 transition-colors disabled:cursor-default"
-                          disabled={!contact}
-                        >
-                          {name}
-                        </button>
-                        {contact?.dateAdded && contact.dateAdded !== "(No hay datos)" && (
-                          <span className="text-[11px] text-cream-dim shrink-0">
-                            Asignado: {new Date(contact.dateAdded).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
-                          </span>
-                        )}
-                      </div>
-                      {error ? (
-                        <p className="text-xs text-danger-400">❌ {error}</p>
-                      ) : (
-                        <div className="text-xs text-cream-muted">
-                          {summary.split("\n").filter(l => l.trim()).map(renderSummaryLine)}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </>
       )}
 
