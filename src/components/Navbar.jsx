@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, RefreshCw, Wifi, WifiOff, AlertTriangle } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
+import ZoomControl from "./ZoomControl.jsx";
 
 const DEEP_STATS_STALE_MS = 24 * 60 * 60 * 1000; // 24h
 
@@ -19,7 +20,7 @@ function relativeTime(date) {
   return `hace ${Math.floor(diff / 86400)} d`;
 }
 
-export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent, onAudit, onReport }) {
+export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent, onAudit, onReport, zoomProps }) {
   const { data, deepStats, loading, error, lastSync, refresh } = useData();
 
   const deepStatsUpdatedAt = deepStats?.updatedAt ? new Date(deepStats.updatedAt) : null;
@@ -94,6 +95,8 @@ export default function Navbar({ week, isCurrentWeek, onPrev, onNext, onCurrent,
                   </span></>
               ) : null}
             </div>
+
+            {zoomProps && <ZoomControl {...zoomProps} />}
 
             {onReport && (
               <button

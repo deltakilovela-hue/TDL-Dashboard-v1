@@ -192,17 +192,21 @@ export default function AdvisorReportView() {
     setLeadSummaries(null);
   }, [advisor, rangeType, from?.getTime(), to?.getTime()]);
 
+  async function fetchNoteDetail() {
+    const contactIds = (data?.contacts || []).filter(c => c.assignedTo === advisor).map(c => c.id);
+    if (contactIds.length === 0) return { ok: true, byContact: {} };
+    const r = await fetch("/api/advisor-notes-detail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactIds, from: from?.toISOString(), to: to?.toISOString() }),
+    });
+    return r.json();
+  }
+
   async function loadNoteDetail() {
     setNoteDetailLoading(true); setNoteDetailError(null);
     try {
-      const contactIds = (data?.contacts || []).filter(c => c.assignedTo === advisor).map(c => c.id);
-      if (contactIds.length === 0) { setNoteDetail({ byContact: {} }); return; }
-      const r = await fetch("/api/advisor-notes-detail", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactIds, from: from?.toISOString(), to: to?.toISOString() }),
-      });
-      const json = await r.json();
+      const json = await fetchNoteDetail();
       if (!json.ok) { setNoteDetailError(json.error); return; }
       setNoteDetail(json);
     } catch (e) {
@@ -226,9 +230,10 @@ export default function AdvisorReportView() {
     return Object.entries(map).sort(([a], [b]) => b.localeCompare(a));
   }, [noteDetail]);
 
-  async function generateLeadSummaries() {
-    if (!noteDetail) return;
-    const contactIds = Object.keys(noteDetail.byContact).slice(0, MAX_LEADS_FOR_SUMMARY);
+  async function generateLeadSummaries(detailOverride) {
+    const detail = detailOverride || noteDetail;
+    if (!detail) return;
+    const contactIds = Object.keys(detail.byContact).slice(0, MAX_LEADS_FOR_SUMMARY);
     setLeadSummariesLoading(true);
     const results = [];
     const CONCURRENCY = 3;
@@ -237,7 +242,7 @@ export default function AdvisorReportView() {
       const batchResults = await Promise.all(batch.map(async contactId => {
         const contact = contactsById[contactId];
         const name = contact ? (`${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "(Sin nombre)") : contactId;
-        const notesText = noteDetail.byContact[contactId].map(n => stripHtml(n.body)).filter(Boolean).join("\n\n");
+        const notesText = detail.byContact[contactId].map(n => stripHtml(n.body)).filter(Boolean).join("\n\n");
         try {
           const r = await fetch("/api/summarize", {
             method: "POST",
@@ -255,6 +260,23 @@ export default function AdvisorReportView() {
     }
     setLeadSummaries(results);
     setLeadSummariesLoading(false);
+  }
+
+  // Atajo desde la barra de rango: trae el detalle de notas si falta y
+  // genera el resumen de una — evita tener que bajar hasta la sección.
+  async function quickGenerateSummary() {
+    if (noteDetail) { generateLeadSummaries(); return; }
+    setNoteDetailLoading(true); setNoteDetailError(null);
+    try {
+      const json = await fetchNoteDetail();
+      if (!json.ok) { setNoteDetailError(json.error); return; }
+      setNoteDetail(json);
+      setNoteDetailLoading(false);
+      await generateLeadSummaries(json);
+    } catch (e) {
+      setNoteDetailError(e.message);
+      setNoteDetailLoading(false);
+    }
   }
 
   return (
@@ -319,6 +341,20 @@ export default function AdvisorReportView() {
         )}
 
         <span className="text-sm font-medium text-cream">{from ? formatRangeLabel(rangeType, from, to) : "Sin datos históricos para este asesor"}</span>
+
+        {agg.notasTotal > 0 && (
+          <button
+            onClick={quickGenerateSummary}
+            disabled={noteDetailLoading || leadSummariesLoading}
+            className="flex items-center gap-1.5 text-xs font-medium text-gold-400 hover:text-gold-300 border border-gold-500/40 hover:border-gold-500/70 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 shrink-0"
+          >
+            {(noteDetailLoading || leadSummariesLoading)
+              ? <><div className="h-3 w-3 animate-spin rounded-full border-2 border-gold-500/30 border-t-gold-400" /> Generando…</>
+              : leadSummaries
+                ? <><RefreshCw size={12} /> Regenerar resumen</>
+                : <><Sparkles size={12} /> Generar resumen</>}
+          </button>
+        )}
       </div>
 
       {!advisor ? (

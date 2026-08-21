@@ -1,9 +1,13 @@
 import { useState, useEffect } from "react";
 import { DataProvider } from "./contexts/DataContext.jsx";
 import Navbar from "./components/Navbar.jsx";
+import ZoomControl from "./components/ZoomControl.jsx";
 import AdvisorWeeklyView from "./views/AdvisorWeeklyView.jsx";
 import AuditView from "./views/AuditView.jsx";
 import AdvisorReportView from "./views/AdvisorReportView.jsx";
+
+const ZOOM_KEY = "tdl_zoom_level";
+const ZOOM_MIN = 70, ZOOM_MAX = 150, ZOOM_STEP = 10;
 
 function getWeekOf(anchor = new Date()) {
   const d   = new Date(anchor);
@@ -21,6 +25,16 @@ function Dashboard() {
   const [view, setView]  = useState("weekly"); // "weekly" | "audit" | "reporte"
   const [week, setWeek] = useState(() => getWeekOf());
 
+  // Zoom de toda la app — algunas pantallas se ven muy apretadas en ciertas PCs.
+  const [zoom, setZoom] = useState(() => {
+    try { return Number(localStorage.getItem(ZOOM_KEY)) || 100; } catch { return 100; }
+  });
+  useEffect(() => { try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch {} }, [zoom]);
+  const zoomOut = () => setZoom(z => Math.max(ZOOM_MIN, z - ZOOM_STEP));
+  const zoomIn  = () => setZoom(z => Math.min(ZOOM_MAX, z + ZOOM_STEP));
+  const zoomReset = () => setZoom(100);
+  const zoomProps = { zoom, onZoomOut: zoomOut, onZoomIn: zoomIn, onReset: zoomReset };
+
   const prevWeek    = () => setWeek(w => getWeekOf(new Date(w.from.getTime() - 7 * 86_400_000)));
   const nextWeek    = () => setWeek(w => getWeekOf(new Date(w.to.getTime() + 1)));
   const currentWeek = () => setWeek(getWeekOf());
@@ -36,7 +50,7 @@ function Dashboard() {
 
   if (view === "audit") {
     return (
-      <div className="min-h-screen bg-zinc-900">
+      <div style={{ zoom: `${zoom}%` }} className="min-h-screen bg-zinc-900">
         <div className="border-b border-zinc-800 px-6 py-3 flex items-center gap-4">
           <button
             onClick={() => setView("weekly")}
@@ -44,6 +58,7 @@ function Dashboard() {
           >
             ← Volver al Dashboard
           </button>
+          <div className="ml-auto"><ZoomControl {...zoomProps} /></div>
         </div>
         <AuditView />
       </div>
@@ -52,7 +67,7 @@ function Dashboard() {
 
   if (view === "reporte") {
     return (
-      <div className="min-h-screen bg-dark-950">
+      <div style={{ zoom: `${zoom}%` }} className="min-h-screen bg-dark-950">
         <div className="border-b border-dark-700 px-6 py-3 flex items-center gap-4">
           <button
             onClick={() => setView("weekly")}
@@ -60,6 +75,7 @@ function Dashboard() {
           >
             ← Volver al Dashboard
           </button>
+          <div className="ml-auto"><ZoomControl {...zoomProps} /></div>
         </div>
         <main className="mx-auto max-w-screen-xl px-4 sm:px-6 py-8">
           <AdvisorReportView />
@@ -69,7 +85,7 @@ function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-dark-950">
+    <div style={{ zoom: `${zoom}%` }} className="min-h-screen bg-dark-950">
       <Navbar
         week={week}
         isCurrentWeek={isCurrentWeek}
@@ -78,6 +94,7 @@ function Dashboard() {
         onCurrent={currentWeek}
         onAudit={() => setView("audit")}
         onReport={() => setView("reporte")}
+        zoomProps={zoomProps}
       />
       <main className="mx-auto max-w-screen-xl px-4 sm:px-6 py-8">
         <AdvisorWeeklyView week={week} />
