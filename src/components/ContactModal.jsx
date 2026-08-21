@@ -5,7 +5,7 @@ import { X, MessageSquare, Phone, FileText, PhoneCall, PhoneMissed, ChevronDown,
 const TRANSCRIPT_FIELD_ID = "uLTVDnWx1MuoYB2u44Sm";
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
-function stripHtml(str) {
+export function stripHtml(str) {
   if (!str) return "";
   return str
     .replace(/<[^>]*>/g, "")
@@ -29,7 +29,7 @@ function formatDateShort(str) {
 function hasValue(v) { return v && v !== "(No hay datos)" && v !== "--"; }
 
 // Render simple: convierte **negritas** del texto del resumen a <strong>, sin HTML arbitrario
-function renderSummaryLine(line, i) {
+export function renderSummaryLine(line, i) {
   const parts = line.split(/(\*\*.+?\*\*)/g).filter(Boolean);
   return (
     <p key={i} className="leading-relaxed">

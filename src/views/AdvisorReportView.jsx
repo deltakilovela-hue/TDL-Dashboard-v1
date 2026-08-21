@@ -1,7 +1,10 @@
-import { useMemo, useState } from "react";
-import { Users, MessageSquare, Phone, PhoneCall, PhoneMissed, FileText, Mail, Smartphone, ChevronLeft, ChevronRight, Database } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { Users, MessageSquare, Phone, PhoneCall, PhoneMissed, FileText, Mail, Smartphone, ChevronLeft, ChevronRight, Database, Sparkles, RefreshCw } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import { EXCLUDED_USERS } from "./AdvisorWeeklyView.jsx";
+import ContactModal, { stripHtml, renderSummaryLine } from "../components/ContactModal.jsx";
+
+const MAX_LEADS_FOR_SUMMARY = 25; // limite de resumenes IA por corrida, para no disparar el costo en rangos "historico"
 
 // ── Rangos de fecha ────────────────────────────────────────────────────────────
 function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -167,6 +170,93 @@ export default function AdvisorReportView() {
   const usingDeep = !!deepStats?.dailyStats;
   const maxChannel = Math.max(agg.mensajesPorCanal.correo, agg.mensajesPorCanal.sms, agg.mensajesPorCanal.whatsappQr, agg.mensajesPorCanal.otros, 1);
 
+  const contactsById = useMemo(() => {
+    const map = {};
+    (data?.contacts || []).forEach(c => { map[c.id] = c; });
+    return map;
+  }, [data]);
+
+  // ── Detalle de notas (texto + contacto) — bajo demanda, no viene del cache ────
+  const [noteDetail,        setNoteDetail]        = useState(null); // { byContact }
+  const [noteDetailLoading, setNoteDetailLoading]  = useState(false);
+  const [noteDetailError,   setNoteDetailError]    = useState(null);
+  const [selectedContact,   setSelectedContact]    = useState(null);
+
+  // ── Resumen de asesor por IA (usa el detalle de notas ya cargado) ────────────
+  const [leadSummaries,        setLeadSummaries]        = useState(null); // [{contactId, name, dateAdded, summary|error}]
+  const [leadSummariesLoading, setLeadSummariesLoading] = useState(false);
+
+  // El detalle/resumen queda obsoleto si cambia el asesor o el rango
+  useEffect(() => {
+    setNoteDetail(null); setNoteDetailError(null);
+    setLeadSummaries(null);
+  }, [advisor, rangeType, from?.getTime(), to?.getTime()]);
+
+  async function loadNoteDetail() {
+    setNoteDetailLoading(true); setNoteDetailError(null);
+    try {
+      const contactIds = (data?.contacts || []).filter(c => c.assignedTo === advisor).map(c => c.id);
+      if (contactIds.length === 0) { setNoteDetail({ byContact: {} }); return; }
+      const r = await fetch("/api/advisor-notes-detail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactIds, from: from?.toISOString(), to: to?.toISOString() }),
+      });
+      const json = await r.json();
+      if (!json.ok) { setNoteDetailError(json.error); return; }
+      setNoteDetail(json);
+    } catch (e) {
+      setNoteDetailError(e.message);
+    } finally {
+      setNoteDetailLoading(false);
+    }
+  }
+
+  const notesByDate = useMemo(() => {
+    if (!noteDetail) return null;
+    const map = {};
+    Object.entries(noteDetail.byContact).forEach(([contactId, notes]) => {
+      notes.forEach(n => {
+        const day = (n.dateAdded || "").split("T")[0];
+        if (!day) return;
+        if (!map[day]) map[day] = [];
+        map[day].push({ ...n, contactId });
+      });
+    });
+    return Object.entries(map).sort(([a], [b]) => b.localeCompare(a));
+  }, [noteDetail]);
+
+  async function generateLeadSummaries() {
+    if (!noteDetail) return;
+    const contactIds = Object.keys(noteDetail.byContact).slice(0, MAX_LEADS_FOR_SUMMARY);
+    setLeadSummariesLoading(true);
+    const results = [];
+    const CONCURRENCY = 3;
+    for (let i = 0; i < contactIds.length; i += CONCURRENCY) {
+      const batch = contactIds.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(batch.map(async contactId => {
+        const contact = contactsById[contactId];
+        const name = contact ? (`${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "(Sin nombre)") : contactId;
+        const notesText = noteDetail.byContact[contactId].map(n => stripHtml(n.body)).filter(Boolean).join("\n\n");
+        try {
+          const r = await fetch("/api/summarize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contactName: name, transcript: "", notes: notesText }),
+          });
+          const json = await r.json();
+          if (!json.ok) return { contactId, name, contact, error: json.error };
+          return { contactId, name, contact, summary: json.summary };
+        } catch (e) {
+          return { contactId, name, contact, error: e.message };
+        }
+      }));
+      results.push(...batchResults);
+    }
+    setLeadSummaries(results);
+    setLeadSummariesLoading(false);
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -264,12 +354,29 @@ export default function AdvisorReportView() {
 
           {/* ── Notas por fecha ── */}
           <div className="rounded-xl border border-dark-700 bg-dark-900 overflow-hidden">
-            <div className="px-5 py-3 border-b border-dark-700">
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-dark-700">
               <p className="text-sm font-semibold text-cream">Notas agregadas por fecha</p>
+              {agg.notasTotal > 0 && !noteDetail && (
+                <button
+                  onClick={loadNoteDetail}
+                  disabled={noteDetailLoading}
+                  className="flex items-center gap-1.5 text-xs font-medium text-gold-400 hover:text-gold-300 border border-gold-500/40 hover:border-gold-500/70 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 shrink-0"
+                >
+                  {noteDetailLoading
+                    ? <><div className="h-3 w-3 animate-spin rounded-full border-2 border-gold-500/30 border-t-gold-400" /> Cargando…</>
+                    : "Ver notas y contactos"}
+                </button>
+              )}
             </div>
+
+            {noteDetailError && (
+              <div className="px-5 py-3 text-xs text-danger-400 bg-danger-400/10 border-b border-danger-400/20">❌ {noteDetailError}</div>
+            )}
+
             {agg.notasPorFecha.length === 0 ? (
               <p className="p-5 text-center text-sm text-cream-dim">Sin notas registradas en este rango.</p>
-            ) : (
+            ) : !notesByDate ? (
+              // Vista rápida: solo conteos (viene del cache del job nocturno, sin costo)
               <div className="max-h-80 overflow-y-auto divide-y divide-dark-700/50">
                 {agg.notasPorFecha.map(({ date, count }) => (
                   <div key={date} className="flex items-center justify-between px-5 py-2.5">
@@ -280,9 +387,101 @@ export default function AdvisorReportView() {
                   </div>
                 ))}
               </div>
+            ) : (
+              // Vista detallada: texto real + contacto (bajo demanda, en vivo desde GHL)
+              <div className="max-h-[32rem] overflow-y-auto divide-y divide-dark-700/50">
+                {notesByDate.map(([date, notes]) => (
+                  <div key={date}>
+                    <div className="sticky top-0 bg-dark-800/90 backdrop-blur-sm px-5 py-1.5 text-[11px] font-medium text-cream-dim uppercase tracking-wide">
+                      {new Date(date).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · {notes.length} nota{notes.length !== 1 ? "s" : ""}
+                    </div>
+                    {notes.map(note => {
+                      const contact = contactsById[note.contactId];
+                      const name = contact ? (`${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "(Sin nombre)") : "(Contacto no encontrado)";
+                      return (
+                        <div key={note.id} className="px-5 py-2.5 border-t border-dark-700/30">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <button
+                              onClick={() => contact && setSelectedContact(contact)}
+                              className="text-sm font-medium text-cream hover:text-gold-400 transition-colors truncate disabled:cursor-default"
+                              disabled={!contact}
+                            >
+                              {name}
+                            </button>
+                            <span className="text-[10px] text-cream-dim shrink-0">
+                              {new Date(note.dateAdded).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-cream-muted leading-relaxed line-clamp-3">{stripHtml(note.body) || "(Sin contenido)"}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
+
+          {/* ── Resumen de asesor (IA) ── */}
+          {noteDetail && Object.keys(noteDetail.byContact).length > 0 && (
+            <div className="rounded-xl border border-gold-500/20 bg-dark-900 overflow-hidden">
+              <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-dark-700">
+                <div>
+                  <p className="text-sm font-semibold text-cream flex items-center gap-1.5"><Sparkles size={14} className="text-gold-400" /> Resumen de asesor (IA)</p>
+                  <p className="text-xs text-cream-dim mt-0.5">
+                    Por cada lead con notas en el rango: cuándo se le asignó y un resumen de lo registrado.
+                    {Object.keys(noteDetail.byContact).length > MAX_LEADS_FOR_SUMMARY && ` Limitado a los primeros ${MAX_LEADS_FOR_SUMMARY} leads — reduce el rango para cubrir el resto.`}
+                  </p>
+                </div>
+                <button
+                  onClick={generateLeadSummaries}
+                  disabled={leadSummariesLoading}
+                  className="flex items-center gap-1.5 text-xs font-medium text-gold-400 hover:text-gold-300 border border-gold-500/40 hover:border-gold-500/70 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 shrink-0"
+                >
+                  {leadSummariesLoading
+                    ? <><div className="h-3 w-3 animate-spin rounded-full border-2 border-gold-500/30 border-t-gold-400" /> Generando…</>
+                    : leadSummaries
+                      ? <><RefreshCw size={12} /> Regenerar</>
+                      : <><Sparkles size={12} /> Generar resumen por lead</>}
+                </button>
+              </div>
+
+              {leadSummaries && (
+                <div className="max-h-[40rem] overflow-y-auto divide-y divide-dark-700/50">
+                  {leadSummaries.map(({ contactId, name, contact, summary, error }) => (
+                    <div key={contactId} className="px-5 py-4">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <button
+                          onClick={() => contact && setSelectedContact(contact)}
+                          className="text-sm font-semibold text-cream hover:text-gold-400 transition-colors disabled:cursor-default"
+                          disabled={!contact}
+                        >
+                          {name}
+                        </button>
+                        {contact?.dateAdded && contact.dateAdded !== "(No hay datos)" && (
+                          <span className="text-[11px] text-cream-dim shrink-0">
+                            Asignado: {new Date(contact.dateAdded).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                      {error ? (
+                        <p className="text-xs text-danger-400">❌ {error}</p>
+                      ) : (
+                        <div className="text-xs text-cream-muted">
+                          {summary.split("\n").filter(l => l.trim()).map(renderSummaryLine)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </>
+      )}
+
+      {selectedContact && (
+        <ContactModal contact={selectedContact} onClose={() => setSelectedContact(null)} />
       )}
     </div>
   );

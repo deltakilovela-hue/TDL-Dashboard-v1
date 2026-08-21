@@ -11,6 +11,9 @@
     },
     "api/summarize.js": {
       "maxDuration": 30
+    },
+    "api/advisor-notes-detail.js": {
+      "maxDuration": 60
     }
   }
 }
