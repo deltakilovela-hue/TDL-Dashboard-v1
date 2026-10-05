@@ -87,7 +87,11 @@ function MessageBubble({ msg }) {
           {answered ? "Llamada contestada" : missed ? "Llamada perdida" : "Llamada"}
           {msg.isOutbound ? " (saliente)" : " (entrante)"}
         </span>
-        {msg.callDuration && <span className="opacity-60">· {Math.round(msg.callDuration / 60)}min</span>}
+        {msg.callDuration > 0 && (
+          <span className="opacity-60">
+            · {msg.callDuration < 60 ? `${msg.callDuration}s` : `${Math.floor(msg.callDuration / 60)}m ${msg.callDuration % 60}s`}
+          </span>
+        )}
         <span className="ml-auto opacity-50">{formatDateShort(msg.dateAdded)}</span>
       </div>
     );

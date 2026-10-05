@@ -73,20 +73,25 @@ export default async function handler(req, res) {
       ? await ghlGet(`/conversations/${firstConvId}/messages`, { limit: "20" })
       : null;
 
+    // Catálogo de pipelines: /opportunities/search solo trae pipelineId y
+    // pipelineStageId, los nombres se resuelven aquí.
+    const rawPipelines = await ghlGet(`/opportunities/pipelines`, { locationId: LOCATION_ID })
+      .catch(() => null);
+    const pipelineNames = {}, stageNames = {};
+    (rawPipelines?.pipelines || []).forEach(p => {
+      pipelineNames[p.id] = p.name;
+      (p.stages || []).forEach(s => { stageNames[s.id] = s.name; });
+    });
+
     // ── Pipelines únicos de oportunidades ────────────────────────────────────
     const pipelines = {};
     for (const opp of (rawOpps.opportunities || [])) {
-      const pName = opp.pipeline?.name || "Sin pipeline";
-      const pId   = opp.pipeline?.id   || "?";
+      const pId   = opp.pipelineId || opp.pipeline?.id || "?";
+      const pName = pipelineNames[pId] || opp.pipeline?.name || "Sin pipeline";
       if (!pipelines[pId]) pipelines[pId] = { id: pId, name: pName, stages: {} };
-      const sName = opp.pipelineStage?.name || "Sin etapa";
-      const sId   = opp.pipelineStage?.id   || "?";
-      pipelines[pId].stages[sId] = sName;
+      const sId   = opp.pipelineStageId || opp.pipelineStage?.id || "?";
+      pipelines[pId].stages[sId] = stageNames[sId] || opp.pipelineStage?.name || "Sin etapa";
     }
-
-    // También intenta el endpoint de pipelines directamente
-    const rawPipelines = await ghlGet(`/opportunities/pipelines`, { locationId: LOCATION_ID })
-      .catch(() => null);
 
     // ── Calendarios: si hay datos los incluimos ────────────────────────────────
     const rawAppointments = firstConvId

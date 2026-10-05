@@ -56,6 +56,10 @@ function sameCursor(a, b) {
   return a.startAfterId === b.startAfterId && a.startAfter === b.startAfter;
 }
 
+// Tope de seguridad de páginas (100 × 100 = 10,000 registros) — solo evita
+// loops infinitos; el corte real es cuando GHL devuelve menos de 100.
+const MAX_PAGES = 100;
+
 // ── Usuarios ──────────────────────────────────────────────────────────────────
 async function fetchUsers(locationId) {
   try {
@@ -90,7 +94,7 @@ async function fetchCustomFieldMap(locationId) {
 // ── Contactos paginados ───────────────────────────────────────────────────────
 async function fetchContacts(locationId) {
   const all = []; const seen = new Set(); let cursor = null;
-  for (let p = 0; p < 20; p++) {
+  for (let p = 0; p < MAX_PAGES; p++) {
     try {
       const data = await ghlGet("/contacts/", { locationId, limit: "100", ...cursorParams(cursor) });
       const raw  = data.contacts || [];
@@ -112,16 +116,32 @@ function oppScore(status, pipeline) {
   return s * 10 + (p === -1 ? 99 : p);
 }
 
+// /opportunities/search solo devuelve pipelineId y pipelineStageId (no los
+// nombres) — se resuelven contra el catálogo de pipelines de la ubicación.
+async function fetchPipelineMaps(locationId) {
+  const pipelines = {}, stages = {};
+  try {
+    const data = await ghlGet("/opportunities/pipelines", { locationId });
+    (data.pipelines || []).forEach(p => {
+      pipelines[p.id] = p.name;
+      (p.stages || []).forEach(s => { stages[s.id] = s.name; });
+    });
+  } catch (e) { console.warn("fetchPipelineMaps:", e.message); }
+  return { pipelines, stages };
+}
+
 async function fetchOpportunityMap(locationId) {
   const map = {}; let cursor = null;
-  for (let p = 0; p < 20; p++) {
+  const { pipelines, stages } = await fetchPipelineMaps(locationId);
+  for (let p = 0; p < MAX_PAGES; p++) {
     try {
       const data = await ghlGet("/opportunities/search", { location_id: locationId, limit: "100", ...cursorParams(cursor) });
       const opps = data.opportunities || [];
       console.log(`opps p${p+1}: ${opps.length}`);
       opps.forEach(opp => {
         const contactId = opp.contactId || opp.contact?.id; if (!contactId) return;
-        const pipelineName = opp.pipeline?.name || ""; const stageName = opp.pipelineStage?.name || "(No hay datos)";
+        const pipelineName = pipelines[opp.pipelineId] || opp.pipeline?.name || "";
+        const stageName    = stages[opp.pipelineStageId] || opp.pipelineStage?.name || "(No hay datos)";
         const status = (opp.status || "open").toLowerCase();
         const pl = pipelineName.toLowerCase();
         if (SKIP_PIPELINE_NAMES.some(s => pl.includes(s))) return;
@@ -138,52 +158,33 @@ async function fetchOpportunityMap(locationId) {
   return map;
 }
 
-// ── Conversaciones paginadas (máx 1000 para stats semanales) ─────────────────
+// ── Conversaciones paginadas ──────────────────────────────────────────────────
+// /conversations/search NO manda meta/cursor (meta: null), por eso extractCursor
+// cortaba en la primera página y solo se leían 100 de ~1,300. Se pagina con
+// startAfterDate = sort[0] (lastMessageDate) de la última conversación.
 async function fetchConversations(locationId) {
-  const all = []; let cursor = null;
-  for (let p = 0; p < 10; p++) {
+  const all = []; const seen = new Set(); let startAfterDate = null;
+  for (let p = 0; p < MAX_PAGES; p++) {
     try {
-      const data  = await ghlGet("/conversations/search", { locationId, limit: "100", ...cursorParams(cursor) });
+      const data  = await ghlGet("/conversations/search", { locationId, limit: "100", startAfterDate });
       const batch = data.conversations || [];
-      all.push(...batch);
-      console.log(`convs p${p+1}: ${batch.length}`);
-      const next = extractCursor(data, batch);
-      if (batch.length < 100 || !next || sameCursor(cursor, next)) break;
-      cursor = next;
+      const fresh = batch.filter(c => c.id && !seen.has(c.id) && seen.add(c.id));
+      all.push(...fresh);
+      console.log(`convs p${p+1}: ${batch.length} → total ${all.length}`);
+      const next = batch.at(-1)?.sort?.[0] ?? batch.at(-1)?.lastMessageDate;
+      if (batch.length < 100 || !next || next === startAfterDate || fresh.length === 0) break;
+      startAfterDate = next;
     } catch (e) { console.warn("fetchConvs p" + p, e.message); break; }
   }
   return all;
 }
 
-// ── Enriquecer custom fields con GET individual (bulk no los devuelve) ─────────
-// GHL's GET /contacts/ (bulk) no incluye customField values confiablemente.
-// GET /contacts/{id} (individual) sí los incluye. Hacemos esto en batches.
-async function fetchCustomFieldsForContacts(contactIds) {
-  const enrichMap = {};
-  const ids  = [...new Set(contactIds)].slice(0, 300); // máx 300 para no agotar timeout
-  const BATCH = 10;
-  let done = 0;
-
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const batch = ids.slice(i, i + BATCH);
-    const results = await Promise.allSettled(
-      batch.map(id => ghlGet(`/contacts/${id}`))
-    );
-    results.forEach((r, j) => {
-      if (r.status === "fulfilled") {
-        const raw    = r.value.contact || r.value;
-        const fields = raw.customField || raw.customFields || [];
-        enrichMap[batch[j]] = fields;
-        done++;
-      }
-    });
-  }
-
-  console.log(`enriched customFields: ${done}/${ids.length}`);
-  return enrichMap;
-}
-
 // ── Normalizar contacto ───────────────────────────────────────────────────────
+// Nota: antes había un paso que volvía a pedir cada contacto con GET individual
+// para "enriquecer" los custom fields. Se quitó: el listado masivo ya los trae
+// completos (verificado: 20/20 contactos iguales bulk vs individual) y esas
+// ~300 peticiones extra disparaban el rate limit de GHL (143/300 fallaban),
+// haciendo fallar otras pantallas como la ficha de contacto.
 // Helper: aplica una lista de campos personalizados al objeto custom
 function applyCustomFields(fields, cfMap, custom) {
   fields.forEach(f => {
@@ -199,11 +200,9 @@ function applyCustomFields(fields, cfMap, custom) {
   });
 }
 
-function normalizeContact(c, userMap, oppMap, cfMap, enrichMap = {}) {
+function normalizeContact(c, userMap, oppMap, cfMap) {
   const custom = {};
-  // Primero datos bulk (a veces vienen vacíos), luego GET individual (más confiable)
   applyCustomFields(c.customField || c.customFields || [], cfMap, custom);
-  applyCustomFields(enrichMap[c.id] || [], cfMap, custom);
   const opp = oppMap[c.id] || {};
   const get = (...keys) => { for (const k of keys) { const v = custom[k]; if (v && v !== "") return v; } return "(No hay datos)"; };
   return {
@@ -275,13 +274,7 @@ export default async function handler(req, res) {
 
     const userMap = buildUserMap(rawUsers);
 
-    // Enriquecer con custom fields individuales para contactos en pipelines prioritarios
-    // El bulk endpoint de GHL no devuelve customField values confiablemente
-    const oppContactIds = Object.keys(oppMap);
-    console.log(`Enriqueciendo ${oppContactIds.length} contactos con custom fields...`);
-    const enrichMap = await fetchCustomFieldsForContacts(oppContactIds);
-
-    const contacts = rawContacts.map(c => normalizeContact(c, userMap, oppMap, cfMap, enrichMap));
+    const contacts = rawContacts.map(c => normalizeContact(c, userMap, oppMap, cfMap));
     const usuarios = rawUsers.map(u => ({
       id: u.id,
       name: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "(Sin nombre)",
@@ -290,13 +283,13 @@ export default async function handler(req, res) {
     }));
 
     // Conversaciones normalizadas
-    // isCall se basa en el TYPE del canal (phone), NO en el último mensaje.
-    // Así una conversación de WhatsApp que tuvo una llamada mezclada
-    // no pierde su clasificación de "mensaje".
+    // GHL unifica todos los canales de un contacto en UNA conversación con
+    // type "TYPE_PHONE" (100% de los casos en esta ubicación), así que el type
+    // no distingue llamada de mensaje. Se usa lastMessageType: la conversación
+    // cuenta como llamada si su última actividad fue una llamada.
     const conversations = rawConversations.map(c => {
-      const channelType = String(c.type || "").toLowerCase();
-      // GHL conversation types: type_phone/phone = llamada. "6" = WhatsApp (NO es llamada).
-      const isCall = channelType === "type_phone" || channelType === "phone" || channelType === "call";
+      const channelType = String(c.lastMessageType || c.type || "").toLowerCase();
+      const isCall = channelType === "type_call";
 
       // GHL NO devuelve lastMessageDirection en conversaciones de WhatsApp/SMS.
       // Fallback: si hay mensajes sin leer → el último fue del cliente (inbound).

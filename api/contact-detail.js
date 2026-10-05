@@ -70,12 +70,17 @@ export default async function handler(req, res) {
 
     if (mainConv?.id) {
       try {
-        const msgRes = await ghlGet(`/conversations/${mainConv.id}/messages`, { limit: "50" });
-        const raw    = Array.isArray(msgRes.messages)
-          ? msgRes.messages
-          : Array.isArray(msgRes.messages?.messages)
-          ? msgRes.messages.messages
-          : [];
+        // GHL pagina con lastMessageId + nextPage. Antes solo se leían 50 mensajes
+        // y en conversaciones largas se perdían llamadas viejas. Tope: 500.
+        const raw = [];
+        let lastMessageId = null;
+        for (let p = 0; p < 5; p++) {
+          const msgRes = await ghlGet(`/conversations/${mainConv.id}/messages`, { limit: "100", lastMessageId });
+          const page   = msgRes.messages || {};
+          raw.push(...(Array.isArray(page) ? page : (page.messages || [])));
+          if (!page.nextPage || !page.lastMessageId || page.lastMessageId === lastMessageId) break;
+          lastMessageId = page.lastMessageId;
+        }
 
         messages = raw.map(m => {
           const type = String(m.messageType || m.type || "").toUpperCase();
@@ -91,9 +96,11 @@ export default async function handler(req, res) {
             dateAdded:   m.dateAdded,
             body:        m.body ? m.body.substring(0, 300) : null,
             status:      m.status,
-            // Llamadas
-            callStatus:  m.meta?.callStatus || null,
-            callDuration:m.meta?.duration   || null,
+            // Llamadas — GHL anida el estado en meta.call.status (y lo repite en
+            // m.status); meta.callStatus no existe y siempre daba null, por eso
+            // "Contestadas"/"Perdidas" marcaban 0. Mismo bug ya corregido en sync-deep.
+            callStatus:  isCall ? String(m.meta?.call?.status || m.status || "").toLowerCase() || null : null,
+            callDuration:isCall ? (m.meta?.call?.duration ?? null) : null,
             attachments: (m.attachments || []).length,
           };
         }).sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded)); // más reciente primero
@@ -107,7 +114,7 @@ export default async function handler(req, res) {
     const recvMessages   = messages.filter(m => !m.isCall && !m.isOutbound).length;
     const totalCalls     = messages.filter(m => m.isCall).length;
     const answeredCalls  = messages.filter(m => m.isCall && (m.callStatus === "completed" || m.callStatus === "answered" || m.callStatus === "connected")).length;
-    const missedCalls    = messages.filter(m => m.isCall && (m.callStatus === "missed" || m.callStatus === "no-answer")).length;
+    const missedCalls    = messages.filter(m => m.isCall && (m.callStatus === "missed" || m.callStatus === "no-answer" || m.callStatus === "busy")).length;
 
     res.json({
       ok: true,

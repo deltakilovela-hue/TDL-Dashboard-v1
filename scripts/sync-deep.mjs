@@ -121,10 +121,14 @@ async function fetchUsers(retries = 3) {
   return {};
 }
 
+// Tope de seguridad de páginas — solo evita loops infinitos; el corte real
+// es cuando GHL devuelve una página incompleta o se pasa la fecha de corte.
+const MAX_PAGES = 100;
+
 // ── Descargar todos los contactos (id + asesor asignado) ──────────────────────
 async function fetchAllContacts() {
   const all = []; const seen = new Set(); let cursor = null;
-  for (let p = 0; p < 30; p++) {
+  for (let p = 0; p < MAX_PAGES; p++) {
     try {
       const data  = await ghlGet("/contacts/", { locationId: GHL_LOCATION_ID, limit: "100", ...cursorParams(cursor) });
       const raw   = data.contacts || [];
@@ -138,36 +142,47 @@ async function fetchAllContacts() {
   return all;
 }
 
-// ── Descargar todas las conversaciones ────────────────────────────────────────
-async function fetchAllConversations() {
-  const all  = [];
-  let cursor = null;
-  for (let p = 0; p < 30; p++) {
-    const data  = await ghlGet("/conversations/search", { locationId: GHL_LOCATION_ID, limit: "100", ...cursorParams(cursor) });
+// ── Descargar las conversaciones activas desde una fecha ──────────────────────
+// /conversations/search NO manda meta/cursor (meta: null), así que extractCursor
+// cortaba en la primera página: el job solo procesaba 100 de ~730 conversaciones
+// activas. Se pagina con startAfterDate = sort[0] (lastMessageDate) de la última.
+// Vienen ordenadas de la más reciente a la más vieja, así que se puede parar en
+// cuanto se pasa la fecha de corte.
+async function fetchAllConversations(since) {
+  const all = []; const seen = new Set(); let startAfterDate = null;
+  for (let p = 0; p < MAX_PAGES; p++) {
+    const data  = await ghlGet("/conversations/search", { locationId: GHL_LOCATION_ID, limit: "100", startAfterDate });
     const batch = data.conversations || [];
-    all.push(...batch);
+    const fresh = batch.filter(c => c.id && !seen.has(c.id) && seen.add(c.id));
+    all.push(...fresh);
     console.log(`  convs pág ${p + 1}: ${batch.length} → total ${all.length}`);
-    const next = extractCursor(data, batch);
-    if (batch.length < 100 || !next || sameCursor(cursor, next)) break;
-    cursor = next;
+    const last = batch.at(-1);
+    const next = last?.sort?.[0] ?? last?.lastMessageDate;
+    if (batch.length < 100 || !next || next === startAfterDate || fresh.length === 0) break;
+    if (since && Number(next) < since.getTime()) break;
+    startAfterDate = next;
   }
   return all;
 }
 
-// ── Descargar mensajes de una conversación ────────────────────────────────────
-async function fetchMessages(convId) {
+// ── Descargar mensajes de una conversación (hasta la fecha de corte) ──────────
+// GHL pagina mensajes con lastMessageId + nextPage (no con meta), así que antes
+// solo se leían los primeros 100: conversaciones largas perdían llamadas y
+// mensajes. Los mensajes vienen del más nuevo al más viejo; se para al pasar
+// la fecha de corte.
+async function fetchMessages(convId, since) {
   const msgs = [];
-  let cursor = null;
-  for (let p = 0; p < 5; p++) {  // máx 5 páginas = 500 mensajes
+  let lastMessageId = null;
+  for (let p = 0; p < 50; p++) {  // tope de seguridad: 5,000 mensajes
     try {
-      const data  = await ghlGet(`/conversations/${convId}/messages`, { limit: "100", ...cursorParams(cursor) });
-      // GHL devuelve mensajes en data.messages.messages o data.messages
-      const raw   = Array.isArray(data.messages) ? data.messages
-                  : Array.isArray(data.messages?.messages) ? data.messages.messages : [];
+      const data  = await ghlGet(`/conversations/${convId}/messages`, { limit: "100", lastMessageId });
+      const page  = data.messages || {};
+      const raw   = Array.isArray(page) ? page : (page.messages || []);
       msgs.push(...raw);
-      const next = extractCursor(data.messages || data, raw);
-      if (raw.length < 100 || !next || sameCursor(cursor, next)) break;
-      cursor = next;
+      const oldest = raw.at(-1)?.dateAdded;
+      if (!page.nextPage || !page.lastMessageId || page.lastMessageId === lastMessageId) break;
+      if (since && oldest && new Date(oldest) < since) break;
+      lastMessageId = page.lastMessageId;
     } catch (e) {
       // Silenciar errores de mensajes individuales
       break;
@@ -347,7 +362,7 @@ async function main() {
 
   // 2. Conversaciones → mensajes/llamadas (ventana de 90 días)
   console.log("\n💬 Descargando conversaciones…");
-  const allConvs = await fetchAllConversations();
+  const allConvs = await fetchAllConversations(cutoff);
   console.log(`   ${allConvs.length} conversaciones totales`);
 
   const activeConvs = allConvs.filter(c => {
@@ -365,7 +380,7 @@ async function main() {
     await Promise.all(batch.map(async conv => {
       const agentId   = conv.assignedTo;
       const agentName = agentId ? (userMap[agentId] || agentId) : "(Sin asignar)";
-      const messages  = await fetchMessages(conv.id);
+      const messages  = await fetchMessages(conv.id, cutoff);
       messages.forEach(msg => accumulate(dailyStats, agentName, classifyMessage(msg)));
     }));
     processed += batch.length;
