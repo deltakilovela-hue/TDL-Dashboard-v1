@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { X, MessageSquare, Phone, FileText, PhoneCall, PhoneMissed, ChevronDown, ChevronUp, Pencil, Save, XCircle, CheckCircle, Plus, Send, Sparkles, RefreshCw } from "lucide-react";
+import { SURVEY_GROUPS, SURVEY_FIELDS, surveyCompletion, formatSurveyDate, surveyDateToInput } from "../../shared/surveyFields.js";
 
 // Campo GHL "Transcripción de llamada ☎" — ID confirmado vía /locations/{id}/customFields
 const TRANSCRIPT_FIELD_ID = "uLTVDnWx1MuoYB2u44Sm";
@@ -42,33 +43,8 @@ export function renderSummaryLine(line, i) {
   );
 }
 
-// ── Definición de encuestas con IDs de GHL ───────────────────────────────────
-// Encuesta de Primer Contacto — 10 campos
-const ENCUESTA_PC = [
-  { key: "capturasPantalla",  id: "CisBGAZP5eeeciBWuQ6H", label: "📷 Capturas de seguimiento",        type: "file"  },  // FILE_UPLOAD — solo lectura
-  { key: "requieroMasTiempo", id: "gxdgjNTOijNFjiV3BY1U", label: "Requiero más tiempo p/ responder",   type: "radio",   options: ["Sí","No"] },
-  { key: "medioContacto",     id: "D1bAtBu1yhE3aigqdLCj", label: "Medio de contacto",                  type: "radio",   options: ["WhatsApp","Llamada","Email","Facebook","Instagram","Otro"] },
-  { key: "nivelInteres",      id: "IVDOKjoJDMtoCcYqzlPH", label: "🌡️ Nivel de interés",               type: "radio",   options: ["Alto","Medio","Bajo","Sin interés"] },
-  { key: "deseaCita",         id: "GhEmwRVvGcPSap7NnZsP", label: "📆 ¿Desea agendar una cita?",       type: "radio",   options: ["Sí","No","Tal vez"] },
-  { key: "presupuesto",       id: "XPJiJOI5nVLNXzEXlrDp", label: "💸 Presupuesto estimado",           type: "text"  },
-  { key: "financiamiento",    id: "oLYtW2bv1h8HO11fyJ86", label: "🏦 ¿Cuenta con financiamiento?",    type: "radio",   options: ["Sí","No","En proceso"] },
-  { key: "notaPrimerContacto",id: "UaloobEyDQTsCu41WUnU", label: "Comentario NOTA primer contacto",    type: "textarea" },
-  { key: "funciones",         id: "w5UHR3yXRimaT1wTYpyb", label: "Funciones de LEAD",                 type: "text"  },
-  { key: "notaSeguimiento",   id: "pJ7gXNsKRQaTz6DjICcz", label: "Comentario de seguimiento externo",  type: "textarea" },
-];
-
-// Encuesta de Cierre Comercial — 9 campos
-const ENCUESTA_CIERRE = [
-  { key: "necesitaMasTiempo", id: "2W96VabNVt3fAX4f4kl7", label: "Necesito más tiempo con el prospecto",  type: "radio",   options: ["Sí","No"] },
-  { key: "descartado",        id: "e50h3LU2xsG03FxQYAEN", label: "🗑️ Descartado",                          type: "radio",   options: ["Sí","No"] },
-  { key: "sePresentoCita",    id: "mXKBwOYrchFLnzyllrwf", label: "👥 ¿El prospecto se presentó?",          type: "radio",   options: ["Sí","No","Reprogramada","Reagendó"] },
-  { key: "tipoCita",          id: "Kfx8xOs1NC9hIuTXAFor", label: "📍 Tipo de cita",                        type: "radio",   options: ["Llamada","Presencial","Virtual","Online"] },
-  { key: "nivelInteresPost",  id: "x1bW12U6t73E4Xh9RiI2", label: "📊 Nivel de interés post-cita",          type: "radio",   options: ["Alto","Medio","Bajo","Sin interés"] },
-  { key: "queFaltaCerrar",    id: "H8SyacUea1rwdbx8JzEU", label: "📝 ¿Qué le hace falta para cerrar?",     type: "text"  },
-  { key: "requiereCloser",    id: "mPBM192trmYBC5ZY0xxo", label: "🔁 ¿Requiere closer u otro equipo?",     type: "radio",   options: ["Sí","No"] },
-  { key: "fechaSeguimiento",  id: "TFPJmo94s7rXwhYmJNQb", label: "🗓️ Fecha tentativa de cierre",           type: "date"  },
-  { key: "notaCierre",        id: "KARIFTmgIzdlCPBYX0IL", label: "Comentario NOTA Cierre comercial",       type: "textarea" },
-];
+// ── Encuestas de agente (Ciclo de vida, Perfil inmobiliario, Cita, Seguimiento
+//    comercial) — definidas en shared/surveyFields.js ─────────────────────────
 
 // ── Burbuja de mensaje ────────────────────────────────────────────────────────
 function MessageBubble({ msg }) {
@@ -143,7 +119,10 @@ function SurveySection({ title, emoji, fields, contact, onSave, saving }) {
 
   function startEdit() {
     const d = {};
-    fields.forEach(f => { d[f.id] = hasValue(contact[f.key]) ? contact[f.key] : ""; });
+    fields.forEach(f => {
+      const v = contact[f.key];
+      d[f.id] = !hasValue(v) ? "" : f.type === "date" ? surveyDateToInput(v) : String(v);
+    });
     setDraft(d);
     setEditing(true);
     setSaveError(null);
@@ -213,9 +192,9 @@ function SurveySection({ title, emoji, fields, contact, onSave, saving }) {
           return (
             <div key={f.key} className="flex gap-3 px-4 py-2.5 items-start">
               <span className="text-xs text-zinc-500 w-40 shrink-0 pt-0.5">{f.label}</span>
-              {editing && f.type !== "file" ? (
+              {editing ? (
                 <div className="flex-1">
-                  {f.type === "radio" ? (
+                  {f.type === "radio" || f.type === "select" ? (
                     <div className="flex flex-wrap gap-1.5">
                       {f.options.map(opt => (
                         <button
@@ -245,22 +224,18 @@ function SurveySection({ title, emoji, fields, contact, onSave, saving }) {
                     />
                   ) : (
                     <input
-                      type="text"
+                      type={f.type === "number" ? "number" : "text"}
+                      min={f.type === "number" ? 0 : undefined}
                       value={draftVal}
                       onChange={e => setDraft(d => ({ ...d, [f.id]: e.target.value }))}
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-gold-500/50"
-                      placeholder="Escribe aquí…"
+                      placeholder={f.type === "number" ? "Ej. 2" : "Escribe aquí…"}
                     />
                   )}
                 </div>
-              ) : f.type === "file" ? (
-                <span className={`text-xs flex-1 ${hasValue(val) ? "text-info-300" : "text-zinc-600"}`}>
-                  {hasValue(val) ? "✓ Archivo adjunto" : "—"}
-                  {editing && <span className="ml-2 text-zinc-600">(no editable aquí)</span>}
-                </span>
               ) : (
-                <span className={`text-xs flex-1 ${hasValue(val) ? "text-zinc-100" : "text-zinc-600"}`}>
-                  {hasValue(val) ? val : "—"}
+                <span className={`text-xs flex-1 whitespace-pre-wrap ${hasValue(val) ? "text-zinc-100" : "text-zinc-600"}`}>
+                  {!hasValue(val) ? "—" : f.type === "date" ? formatSurveyDate(val) : String(val)}
                 </span>
               )}
             </div>
@@ -325,13 +300,11 @@ export default function ContactModal({ contact, onClose }) {
       });
       const json = await r.json();
       if (!json.ok) return { ok: false, error: json.error };
-      // Actualizar localContact con los nuevos valores
-      // Buscar la key del campo en ENCUESTA_PC / ENCUESTA_CIERRE por su id
-      const allFields = [...ENCUESTA_PC, ...ENCUESTA_CIERRE];
+      // Actualizar localContact con los nuevos valores (busca la key por id)
       setLocalContact(prev => {
         const updated = { ...prev };
         Object.entries(fieldMap).forEach(([fieldId, value]) => {
-          const def = allFields.find(f => f.id === fieldId);
+          const def = SURVEY_FIELDS.find(f => f.id === fieldId);
           if (def) updated[def.key] = value;
         });
         return updated;
@@ -347,7 +320,7 @@ export default function ContactModal({ contact, onClose }) {
   // ── Sobreescribir valores del cache con datos frescos de GHL ─────────────────
   // rawCustomFields viene de contact-detail (tiempo real), el cache puede estar desactualizado
   const liveContact = useMemo(() => {
-    const allFields = [...ENCUESTA_PC, ...ENCUESTA_CIERRE];
+    const allFields = SURVEY_FIELDS;
     // Si no hay rawCustomFields, usar localContact tal cual
     if (!detail?.rawCustomFields?.length) return localContact;
 
@@ -431,9 +404,7 @@ export default function ContactModal({ contact, onClose }) {
   const visibleMsgs = showAll ? msgs : msgs.slice(0, 20);
 
   // Calcular completitud usando liveContact (datos frescos de GHL)
-  const pcFilled     = ENCUESTA_PC.filter(f => f.type !== "file" && hasValue(liveContact[f.key])).length;
-  const cierreFilled = ENCUESTA_CIERRE.filter(f => hasValue(liveContact[f.key])).length;
-  const pcTotal      = ENCUESTA_PC.filter(f => f.type !== "file").length; // excluir file del conteo
+  const completion = surveyCompletion(liveContact);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
@@ -469,19 +440,18 @@ export default function ContactModal({ contact, onClose }) {
             <StatPill icon={PhoneCall}     label="Contest."    value={s.answeredCalls ?? 0} color="green" />
             <StatPill icon={PhoneMissed}   label="Perdidas"    value={s.missedCalls   ?? 0} color="red"   />
             <StatPill icon={FileText}      label="Notas GHL"   value={s.totalNotes    ?? 0} color="zinc"  />
-            {/* Completitud encuestas */}
-            <div className="flex flex-col items-center gap-1 rounded-xl px-3 py-2 shrink-0 bg-zinc-800 text-zinc-300">
-              <span className="text-[10px] opacity-70">Enc. PC</span>
-              <span className={`text-lg font-bold ${pcFilled === pcTotal ? "text-green-400" : pcFilled > 0 ? "text-gold-400" : "text-zinc-500"}`}>
-                {pcFilled}/{pcTotal}
-              </span>
-            </div>
-            <div className="flex flex-col items-center gap-1 rounded-xl px-3 py-2 shrink-0 bg-zinc-800 text-zinc-300">
-              <span className="text-[10px] opacity-70">Enc. Cierre</span>
-              <span className={`text-lg font-bold ${cierreFilled === ENCUESTA_CIERRE.length ? "text-green-400" : cierreFilled > 0 ? "text-gold-400" : "text-zinc-500"}`}>
-                {cierreFilled}/{ENCUESTA_CIERRE.length}
-              </span>
-            </div>
+            {/* Completitud de cada encuesta */}
+            {SURVEY_GROUPS.map(g => {
+              const c = completion[g.key];
+              return (
+                <div key={g.key} className="flex flex-col items-center gap-1 rounded-xl px-3 py-2 shrink-0 bg-zinc-800 text-zinc-300" title={g.title}>
+                  <span className="text-[10px] opacity-70">{g.emoji} {g.short}</span>
+                  <span className={`text-lg font-bold ${c.filled === c.total ? "text-green-400" : c.filled > 0 ? "text-gold-400" : "text-zinc-500"}`}>
+                    {c.filled}/{c.total}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -492,8 +462,8 @@ export default function ContactModal({ contact, onClose }) {
           </TabBtn>
           <TabBtn active={tab === "encuestas"} onClick={() => setTab("encuestas")}>
             📋 Encuestas
-            {!loading && (pcFilled + cierreFilled > 0) && (
-              <span className="ml-1 opacity-60">({pcFilled + cierreFilled}/{pcTotal + ENCUESTA_CIERRE.length})</span>
+            {!loading && completion.total.filled > 0 && (
+              <span className="ml-1 opacity-60">({completion.total.filled}/{completion.total.total})</span>
             )}
           </TabBtn>
           <TabBtn active={tab === "notas"} onClick={() => setTab("notas")}>
@@ -538,22 +508,17 @@ export default function ContactModal({ contact, onClose }) {
           {/* ── TAB: Encuestas ── */}
           {!loading && !error && tab === "encuestas" && (
             <div className="flex flex-col gap-4 p-4">
-              <SurveySection
-                title="Encuesta de Primer Contacto"
-                emoji="📋"
-                fields={ENCUESTA_PC}
-                contact={liveContact}
-                onSave={handleSave}
-                saving={saving}
-              />
-              <SurveySection
-                title="Encuesta de Cierre Comercial"
-                emoji="🏁"
-                fields={ENCUESTA_CIERRE}
-                contact={liveContact}
-                onSave={handleSave}
-                saving={saving}
-              />
+              {SURVEY_GROUPS.map(g => (
+                <SurveySection
+                  key={g.key}
+                  title={g.title}
+                  emoji={g.emoji}
+                  fields={g.fields}
+                  contact={liveContact}
+                  onSave={handleSave}
+                  saving={saving}
+                />
+              ))}
             </div>
           )}
 

@@ -1,7 +1,7 @@
 // api/_lib.js — Upstash Redis cache helper
 // ENV requeridas: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 
-const CACHE_KEY = "tdl:ghl:sync:v2";
+const CACHE_KEY = "tdl:ghl:sync:v3"; // v3: encuestas nuevas (shared/surveyFields.js)
 const CACHE_TTL = 1800; // 30 min
 
 async function redisCmd(cmd) {

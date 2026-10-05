@@ -3,6 +3,7 @@ import { MessageSquare, Phone, Inbox, Users, PhoneCall, ChevronDown, ChevronUp, 
 import { useData } from "../contexts/DataContext.jsx";
 import ContactModal from "../components/ContactModal.jsx";
 import { isAutoMessage } from "../../shared/autoMessagePatterns.js";
+import { SURVEY_GROUPS, NOTE_FIELDS, surveyCompletion } from "../../shared/surveyFields.js";
 
 // ── Configuración de roles ────────────────────────────────────────────────────
 // Usuarios que NO son asesores de ventas (ocultar del dashboard)
@@ -276,52 +277,13 @@ function AdvisorHistory({ advisorName, deepStats, currentWeek, onWeekClick }) {
   );
 }
 
-// ── Campos de ambas encuestas (para calcular completion en la tarjeta) ────────
-const FIELDS_PC = [
-  { key: "requieroMasTiempo"  },
-  { key: "medioContacto"      },
-  { key: "nivelInteres"       },
-  { key: "deseaCita"          },
-  { key: "presupuesto"        },
-  { key: "financiamiento"     },
-  { key: "notaPrimerContacto" },
-  { key: "funciones"          },
-  { key: "notaSeguimiento"    },
-];
-const FIELDS_CIERRE = [
-  { key: "necesitaMasTiempo"  },
-  { key: "descartado"         },
-  { key: "sePresentoCita"     },
-  { key: "tipoCita"           },
-  { key: "nivelInteresPost"   },
-  { key: "queFaltaCerrar"     },
-  { key: "requiereCloser"     },
-  { key: "fechaSeguimiento"   },
-  { key: "notaCierre"         },
-];
-const ALL_FORM_FIELDS = [...FIELDS_PC, ...FIELDS_CIERRE];
-
-// ── Campos de notas de actividad ──────────────────────────────────────────────
-const NOTE_FIELDS = [
-  { key: "notaPrimerContacto" },
-  { key: "notaSeguimiento"    },
-  { key: "notaCierre"         },
-];
+// ── Encuestas de agente — definidas en shared/surveyFields.js ─────────────────
+// (Ciclo de vida, Perfil inmobiliario, Cita, Seguimiento comercial)
 
 function hasValue(v) { return v && v !== "(No hay datos)"; }
 
-function formScore(contact) {
-  const pcFilled     = FIELDS_PC.filter(f => hasValue(contact[f.key])).length;
-  const cierreFilled = FIELDS_CIERRE.filter(f => hasValue(contact[f.key])).length;
-  const filled = pcFilled + cierreFilled;
-  const total  = ALL_FORM_FIELDS.length;
-  return {
-    filled, total,
-    pct: Math.round((filled / total) * 100),
-    pcFilled, pcTotal: FIELDS_PC.length,
-    cierreFilled, cierreTotal: FIELDS_CIERRE.length,
-  };
-}
+const pctColor = pct => pct >= 80 ? "bg-success-400" : pct >= 40 ? "bg-gold-500" : "bg-danger-400/70";
+const pctText  = pct => pct >= 80 ? "text-success-400" : pct >= 40 ? "text-gold-400" : "text-danger-400";
 
 // Cuántas notas tiene llenadas este contacto
 function noteScore(contact) {
@@ -399,41 +361,29 @@ function Stat({ icon: Icon, label, value, color = "muted", onClick }) {
 function FormBar({ contacts }) {
   if (contacts.length === 0) return <p className="text-xs text-cream-dim">Sin contactos asignados</p>;
 
-  const scores = contacts.map(c => formScore(c));
-
-  const avgPC        = Math.round(scores.reduce((s, x) => s + x.pcFilled,     0) / scores.length);
-  const avgCierre    = Math.round(scores.reduce((s, x) => s + x.cierreFilled, 0) / scores.length);
-  const avgPCpct     = Math.round((avgPC     / FIELDS_PC.length)     * 100);
-  const avgCierrepct = Math.round((avgCierre / FIELDS_CIERRE.length) * 100);
-  const completos    = contacts.filter(c => formScore(c).pct >= 80).length;
-
-  const barPC     = avgPCpct     >= 80 ? "bg-success-400" : avgPCpct     >= 40 ? "bg-gold-500" : "bg-danger-400/70";
-  const barCierre = avgCierrepct >= 80 ? "bg-success-400" : avgCierrepct >= 40 ? "bg-gold-500" : "bg-danger-400/70";
-  const txtPC     = avgPCpct     >= 80 ? "text-success-400" : avgPCpct     >= 40 ? "text-gold-400" : "text-danger-400";
-  const txtCierre = avgCierrepct >= 80 ? "text-success-400" : avgCierrepct >= 40 ? "text-gold-400" : "text-danger-400";
+  const scores    = contacts.map(c => surveyCompletion(c));
+  const completos = scores.filter(s => s.total.pct >= 80).length;
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-cream-dim">Enc. Primer Contacto</span>
-          <span className={txtPC}>{avgPC}/{FIELDS_PC.length} · {avgPCpct}%</span>
-        </div>
-        <div className="h-1.5 w-full rounded-full bg-dark-700">
-          <div className={`h-1.5 rounded-full transition-all ${barPC}`} style={{ width: `${avgPCpct}%` }} />
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-cream-dim">Enc. Cierre Comercial</span>
-          <span className={txtCierre}>{avgCierre}/{FIELDS_CIERRE.length} · {avgCierrepct}%</span>
-        </div>
-        <div className="h-1.5 w-full rounded-full bg-dark-700">
-          <div className={`h-1.5 rounded-full transition-all ${barCierre}`} style={{ width: `${avgCierrepct}%` }} />
-        </div>
-      </div>
+      {SURVEY_GROUPS.map(g => {
+        // Promedio de campos llenos por contacto en esta encuesta
+        const avg = Math.round(scores.reduce((s, x) => s + x[g.key].filled, 0) / scores.length);
+        const pct = Math.round((scores.reduce((s, x) => s + x[g.key].pct, 0)) / scores.length);
+        return (
+          <div key={g.key} className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-cream-dim">{g.emoji} {g.title}</span>
+              <span className={pctText(pct)}>{avg}/{g.fields.length} · {pct}%</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-dark-700">
+              <div className={`h-1.5 rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        );
+      })}
       <p className="text-[11px] text-cream-dim">
-        <span className={completos > 0 ? "text-cream" : ""}>{completos}</span> de {contacts.length} con ambas encuestas completas
+        <span className={completos > 0 ? "text-cream" : ""}>{completos}</span> de {contacts.length} con encuestas completas (80%+)
       </p>
     </div>
   );
@@ -446,11 +396,7 @@ function ContactList({ contacts, onSelectContact }) {
   return (
     <div className="flex flex-col divide-y divide-dark-700/50 rounded-xl border border-dark-700 bg-dark-800/40 overflow-hidden">
       {contacts.map(c => {
-        const score    = formScore(c);
-        const pcPct    = Math.round((score.pcFilled     / FIELDS_PC.length)     * 100);
-        const cierrePct= Math.round((score.cierreFilled / FIELDS_CIERRE.length) * 100);
-        const barPC    = pcPct     >= 80 ? "bg-success-400" : pcPct     >= 40 ? "bg-gold-500" : "bg-danger-400/70";
-        const barCierre= cierrePct >= 80 ? "bg-success-400" : cierrePct >= 40 ? "bg-gold-500" : "bg-danger-400/70";
+        const score    = surveyCompletion(c);
         const nombre   = `${c.firstName} ${c.lastName}`.trim() || "(Sin nombre)";
 
         return (
@@ -472,22 +418,20 @@ function ContactList({ contacts, onSelectContact }) {
               </span>
             )}
 
-            {/* Barras PC + Cierre */}
+            {/* Una mini barra por encuesta */}
             <div className="flex flex-col gap-0.5 shrink-0 w-20">
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] text-cream-dim w-5">PC</span>
-                <div className="h-1 flex-1 rounded-full bg-dark-700">
-                  <div className={`h-1 rounded-full ${barPC}`} style={{ width: `${pcPct}%` }} />
-                </div>
-                <span className="text-[9px] text-cream-dim w-6 text-right">{pcPct}%</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] text-cream-dim w-5">CC</span>
-                <div className="h-1 flex-1 rounded-full bg-dark-700">
-                  <div className={`h-1 rounded-full ${barCierre}`} style={{ width: `${cierrePct}%` }} />
-                </div>
-                <span className="text-[9px] text-cream-dim w-6 text-right">{cierrePct}%</span>
-              </div>
+              {SURVEY_GROUPS.map(g => {
+                const pct = score[g.key].pct;
+                return (
+                  <div key={g.key} className="flex items-center gap-1" title={g.title}>
+                    <span className="text-[9px] text-cream-dim w-5">{g.short}</span>
+                    <div className="h-1 flex-1 rounded-full bg-dark-700">
+                      <div className={`h-1 rounded-full ${pctColor(pct)}`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-[9px] text-cream-dim w-6 text-right">{pct}%</span>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Indicador de clickeable */}
@@ -500,11 +444,7 @@ function ContactList({ contacts, onSelectContact }) {
 }
 
 // ── Modal de notas del asesor ─────────────────────────────────────────────────
-const NOTE_KEYS = [
-  { key: "notaPrimerContacto", label: "Primer contacto" },
-  { key: "notaSeguimiento",    label: "Seguimiento"     },
-  { key: "notaCierre",         label: "Cierre"          },
-];
+const NOTE_KEYS = NOTE_FIELDS; // notas de las encuestas (shared/surveyFields.js)
 
 function AdvisorNotesModal({ advisor, onClose }) {
   useEffect(() => {

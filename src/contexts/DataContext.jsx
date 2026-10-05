@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 
 const DataContext = createContext(null);
 
-const LS_KEY    = "tdl_ghl_v2";
+const LS_KEY    = "tdl_ghl_v3"; // v3: encuestas nuevas
 const LS_CSV    = "tdl_csv_contacts_v2";
 const LS_TTL_MS = 30 * 60 * 1000; // 30 min
 
