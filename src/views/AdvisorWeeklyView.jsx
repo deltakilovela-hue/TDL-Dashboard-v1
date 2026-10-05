@@ -367,16 +367,15 @@ function FormBar({ contacts }) {
   return (
     <div className="flex flex-col gap-2">
       {SURVEY_GROUPS.map(g => {
-        // Promedio de campos llenos por contacto en esta encuesta (1 decimal, para
-        // que no se lea "0/8 · 2%" cuando el promedio es 0.1)
-        const avgRaw = scores.reduce((s, x) => s + x[g.key].filled, 0) / scores.length;
-        const avg = Number(avgRaw.toFixed(1));
-        const pct = Math.round((avgRaw / g.fields.length) * 100);
+        // % promedio de campos llenos + cuántos contactos tienen algún dato en esta
+        // encuesta (más claro que "promedio/total", que con pocos datos se leía "0/8 · 2%")
+        const pct      = Math.round(scores.reduce((s, x) => s + x[g.key].filled, 0) / (scores.length * g.fields.length) * 100);
+        const withData = scores.filter(x => x[g.key].filled > 0).length;
         return (
           <div key={g.key} className="flex flex-col gap-1">
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-cream-dim">{g.emoji} {g.title}</span>
-              <span className={pctText(pct)}>{avg}/{g.fields.length} · {pct}%</span>
+              <span className={pctText(pct)}>{withData} con datos · {pct}%</span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-dark-700">
               <div className={`h-1.5 rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${pct}%` }} />
