@@ -367,9 +367,11 @@ function FormBar({ contacts }) {
   return (
     <div className="flex flex-col gap-2">
       {SURVEY_GROUPS.map(g => {
-        // Promedio de campos llenos por contacto en esta encuesta
-        const avg = Math.round(scores.reduce((s, x) => s + x[g.key].filled, 0) / scores.length);
-        const pct = Math.round((scores.reduce((s, x) => s + x[g.key].pct, 0)) / scores.length);
+        // Promedio de campos llenos por contacto en esta encuesta (1 decimal, para
+        // que no se lea "0/8 · 2%" cuando el promedio es 0.1)
+        const avgRaw = scores.reduce((s, x) => s + x[g.key].filled, 0) / scores.length;
+        const avg = Number(avgRaw.toFixed(1));
+        const pct = Math.round((avgRaw / g.fields.length) * 100);
         return (
           <div key={g.key} className="flex flex-col gap-1">
             <div className="flex items-center justify-between text-[11px]">
